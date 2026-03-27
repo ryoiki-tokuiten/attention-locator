@@ -1,19 +1,10 @@
 from __future__ import annotations
 
 import re
-import sys
 import unicodedata
 from dataclasses import dataclass
 from math import ceil, floor
-from pathlib import Path
 from typing import Any, Sequence
-
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-SRC_DIR = ROOT_DIR / "src"
-
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
 
 
 DEFAULT_MODEL_NAME = "prajjwal1/bert-tiny"

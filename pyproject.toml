@@ -36,4 +36,4 @@ Documentation = "https://github.com/Seongbuming/savis#readme"
 "Bug Tracker" = "https://github.com/Seongbuming/savis/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["./src/savis"]
+packages = ["./backend/savis"]
