@@ -1,0 +1,340 @@
+:root {
+    color-scheme: dark;
+    font-family: "Space Grotesk", "Segoe UI", sans-serif;
+    background:
+        radial-gradient(circle at top left, rgba(138, 127, 248, 0.2), transparent 42%),
+        radial-gradient(circle at bottom right, rgba(255, 194, 105, 0.16), transparent 38%),
+        #080913;
+    color: #f4f5fb;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    background:
+        linear-gradient(180deg, rgba(10, 12, 22, 0.96), rgba(8, 10, 19, 0.98)),
+        #080913;
+    color: #f4f5fb;
+}
+
+button,
+textarea {
+    font: inherit;
+}
+
+#root {
+    min-height: 100vh;
+}
+
+.app-shell {
+    position: relative;
+    min-height: 100vh;
+    overflow: hidden;
+}
+
+.app-backdrop {
+    position: fixed;
+    inset: auto;
+    pointer-events: none;
+    filter: blur(50px);
+    opacity: 0.75;
+}
+
+.app-backdrop-primary {
+    top: 40px;
+    left: -120px;
+    width: 360px;
+    height: 360px;
+    background: rgba(138, 127, 248, 0.24);
+}
+
+.app-backdrop-secondary {
+    right: -80px;
+    bottom: 120px;
+    width: 320px;
+    height: 320px;
+    background: rgba(255, 194, 105, 0.16);
+}
+
+.workspace {
+    position: relative;
+    z-index: 1;
+    width: min(1440px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 32px 0 40px;
+}
+
+.hero {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 24px;
+    align-items: end;
+    margin-bottom: 24px;
+}
+
+.eyebrow {
+    margin: 0 0 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-size: 12px;
+    color: #ffc269;
+}
+
+.hero h1 {
+    margin: 0 0 16px;
+    font-size: clamp(2.3rem, 5vw, 4.5rem);
+    line-height: 0.96;
+    letter-spacing: -0.04em;
+}
+
+.hero-copy {
+    max-width: 62ch;
+    margin: 0;
+    color: rgba(244, 245, 251, 0.78);
+    font-size: 1.04rem;
+    line-height: 1.7;
+}
+
+.hero-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.metric-card,
+.glass-panel {
+    border: 1px solid rgba(194, 191, 255, 0.12);
+    background: rgba(12, 14, 26, 0.7);
+    backdrop-filter: blur(20px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.24);
+}
+
+.metric-card {
+    border-radius: 22px;
+    padding: 18px 18px 16px;
+}
+
+.metric-card strong {
+    display: block;
+    margin-top: 10px;
+    font-size: 1.3rem;
+}
+
+.metric-card small,
+.metric-label,
+.panel-label {
+    color: rgba(244, 245, 251, 0.62);
+}
+
+.metric-label,
+.panel-label {
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 11px;
+}
+
+.panel-grid {
+    display: grid;
+    grid-template-columns: minmax(320px, 0.92fr) minmax(360px, 1.08fr);
+    gap: 20px;
+    min-height: calc(100vh - 250px);
+}
+
+.glass-panel {
+    display: flex;
+    flex-direction: column;
+    border-radius: 28px;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 22px 18px;
+    border-bottom: 1px solid rgba(194, 191, 255, 0.08);
+}
+
+.panel-header h2 {
+    margin: 8px 0 0;
+    font-size: 1.1rem;
+}
+
+.panel-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(138, 127, 248, 0.14);
+    color: #d8d3ff;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.panel-pill-warning {
+    background: rgba(255, 194, 105, 0.12);
+    color: #ffdca8;
+}
+
+.editor-textarea {
+    width: 100%;
+    flex: 1;
+    min-height: 420px;
+    padding: 24px 24px 28px;
+    border: 0;
+    resize: none;
+    background: transparent;
+    color: #f4f5fb;
+    line-height: 1.7;
+    font-size: 1rem;
+    outline: none;
+}
+
+.editor-textarea::placeholder {
+    color: rgba(244, 245, 251, 0.34);
+}
+
+.preview-panel {
+    min-height: 0;
+}
+
+.attention-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 18px 20px 0;
+    padding: 14px 16px 16px;
+    border: 1px solid rgba(194, 191, 255, 0.1);
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(13, 16, 30, 0.92), rgba(10, 13, 24, 0.82));
+}
+
+.attention-legend-bar {
+    height: 10px;
+    border-radius: 999px;
+    background: linear-gradient(90deg,
+        rgb(64, 196, 110) 0%,
+        rgb(80, 154, 255) 50%,
+        rgb(255, 92, 92) 100%);
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.06),
+        0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.attention-legend-labels {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.attention-legend-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+}
+
+.attention-stop {
+    width: 12px;
+    height: 12px;
+    margin-top: 3px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 18px rgba(0, 0, 0, 0.2);
+}
+
+.attention-stop-cool {
+    background: rgb(64, 196, 110);
+}
+
+.attention-stop-mid {
+    background: rgb(80, 154, 255);
+}
+
+.attention-stop-hot {
+    background: rgb(255, 92, 92);
+}
+
+.attention-legend-item strong {
+    display: block;
+    font-size: 0.9rem;
+}
+
+.attention-legend-item small {
+    color: rgba(244, 245, 251, 0.64);
+    line-height: 1.45;
+}
+
+.preview-surface {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 18px 20px 24px;
+}
+
+.status-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 18px 20px 0;
+    padding: 14px 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 194, 105, 0.18);
+    background: rgba(255, 194, 105, 0.08);
+    color: #ffe5bb;
+}
+
+@media (max-width: 1080px) {
+    .hero {
+        grid-template-columns: 1fr;
+    }
+
+    .hero-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .panel-grid {
+        grid-template-columns: 1fr;
+        min-height: auto;
+    }
+
+    .preview-panel,
+    .editor-panel {
+        min-height: 520px;
+    }
+
+    .attention-legend-labels {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .workspace {
+        width: min(100% - 20px, 1440px);
+        padding-top: 20px;
+    }
+
+    .hero-metrics {
+        grid-template-columns: 1fr;
+    }
+
+    .panel-header {
+        flex-direction: column;
+    }
+
+    .editor-textarea {
+        min-height: 320px;
+        padding: 20px;
+    }
+
+    .preview-surface {
+        padding: 14px;
+    }
+}
