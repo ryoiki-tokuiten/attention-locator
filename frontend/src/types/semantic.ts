@@ -6,6 +6,8 @@ export interface SemanticWeight {
     normalizedSentence: string;
     weight: number;
     band: SemanticBand;
+    sourceStart: number | null;
+    sourceEnd: number | null;
 }
 
 export interface HealthPayload {

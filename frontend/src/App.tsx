@@ -68,6 +68,8 @@ function sanitizeSemanticWeight(item: unknown, fallbackIndex: number): SemanticW
         normalizedSentence,
         weight: clamp(asFiniteNumber(candidate.weight, 0.5)),
         band: asSemanticBand(candidate.band),
+        sourceStart: candidate.sourceStart == null ? null : asFiniteNumber(candidate.sourceStart, 0),
+        sourceEnd: candidate.sourceEnd == null ? null : asFiniteNumber(candidate.sourceEnd, 0),
     };
 }
 

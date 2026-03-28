@@ -11,25 +11,10 @@ from typing import Any, Sequence
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_MODEL_DIR = ROOT_DIR / "model"
-DEFAULT_MAX_WINDOW_TOKENS = 384
-DEFAULT_WINDOW_OVERLAP_SENTENCES = 2
 DEFAULT_MAX_INPUT_TOKENS = 10_000
 HIGH_MEMORY_WARNING_TOKENS = 4_096
 ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
 WHITESPACE_RE = re.compile(r"\s+")
-HTML_COMMENT_RE = re.compile(r"<!--[\s\S]*?-->")
-FENCED_CODE_RE = re.compile(r"(^|\n)(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n\2[^\n]*(?=\n|$)", re.MULTILINE)
-DISPLAY_MATH_RE = re.compile(r"\$\$[\s\S]*?\$\$")
-PAREN_MATH_RE = re.compile(r"\\\([\s\S]*?\\\)")
-BRACKET_MATH_RE = re.compile(r"\\\[[\s\S]*?\\\]")
-INLINE_MATH_RE = re.compile(r"(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)")
-IMAGE_RE = re.compile(r"!\[[^\]]*]\([^)]+\)")
-LINK_RE = re.compile(r"\[([^\]]+)]\(([^)]+)\)")
-INLINE_CODE_RE = re.compile(r"(?<!`)`([^`]+)`(?!`)")
-HTML_TAG_RE = re.compile(r"<[^>]+>")
-TABLE_SEPARATOR_RE = re.compile(r"^\|?[\s:\-]+(?:\|[\s:\-]+)+\|?$")
-HORIZONTAL_RULE_RE = re.compile(r"^\s{0,3}([-*_])(?:\s*\1){2,}\s*$")
-SIMPLE_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
 
 def discover_default_model_name() -> str:
@@ -49,19 +34,6 @@ def discover_default_model_name() -> str:
 DEFAULT_MODEL_NAME = discover_default_model_name()
 
 
-@dataclass(frozen=True)
-class SentenceWindow:
-    start_index: int
-    end_index: int
-    sentences: list[str]
-
-
-@dataclass(frozen=True)
-class TokenSpan:
-    start: int
-    end: int
-
-
 @dataclass
 class SAVISDocumentState:
     cache_key: str
@@ -75,6 +47,7 @@ class SAVISDocumentState:
     tokens: list[str]
     token_attention: Any
     sentence_boundaries_ids: list[int]
+    sentence_source_offsets: list[tuple[int | None, int | None]]
     warnings: list[str]
 
 
@@ -83,64 +56,6 @@ def normalize_sentence(text: str) -> str:
     normalized = ZERO_WIDTH_RE.sub("", normalized)
     normalized = WHITESPACE_RE.sub(" ", normalized).strip()
     return normalized.lower()
-
-
-def sentence_tokenize(text: str) -> list[str]:
-    clean_text = WHITESPACE_RE.sub(" ", text).strip()
-    if not clean_text:
-        return []
-
-    try:
-        import nltk
-
-        try:
-            sentences = nltk.sent_tokenize(clean_text)
-        except LookupError:
-            from nltk.tokenize import PunktSentenceTokenizer
-
-            sentences = PunktSentenceTokenizer().tokenize(clean_text)
-    except ImportError:
-        sentences = SIMPLE_SENTENCE_SPLIT_RE.split(clean_text)
-
-    return [WHITESPACE_RE.sub(" ", sentence).strip() for sentence in sentences if sentence.strip()]
-
-
-def markdown_to_analysis_text(markdown_text: str) -> str:
-    text = markdown_text.replace("\r\n", "\n").replace("\r", "\n")
-    text = HTML_COMMENT_RE.sub("\n", text)
-    text = FENCED_CODE_RE.sub("\n", text)
-    text = DISPLAY_MATH_RE.sub(" ", text)
-    text = BRACKET_MATH_RE.sub(" ", text)
-    text = PAREN_MATH_RE.sub(" ", text)
-    text = INLINE_MATH_RE.sub(" ", text)
-    text = IMAGE_RE.sub(" ", text)
-    text = LINK_RE.sub(r"\1", text)
-    text = INLINE_CODE_RE.sub(" ", text)
-    text = HTML_TAG_RE.sub(" ", text)
-
-    retained_lines: list[str] = []
-
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or HORIZONTAL_RULE_RE.match(line):
-            continue
-        if TABLE_SEPARATOR_RE.match(line):
-            continue
-
-        line = re.sub(r"^#{1,6}\s+", "", line)
-        line = re.sub(r"^>\s*", "", line)
-        line = re.sub(r"^\s*[-*+]\s+", "", line)
-        line = re.sub(r"^\s*\d+\.\s+", "", line)
-
-        if "|" in line:
-            cells = [cell.strip() for cell in line.strip("|").split("|") if cell.strip()]
-            line = ". ".join(cells)
-
-        line = WHITESPACE_RE.sub(" ", line).strip()
-        if line:
-            retained_lines.append(line)
-
-    return "\n".join(retained_lines)
 
 
 def sanitize_numeric_value(
@@ -262,126 +177,14 @@ def assign_score_bands(weights: Sequence[float]) -> list[str]:
     return bands
 
 
-def pack_sentence_windows(
-    sentences: Sequence[str],
-    tokenizer: Any,
-    max_window_tokens: int = DEFAULT_MAX_WINDOW_TOKENS,
-    overlap_sentences: int = DEFAULT_WINDOW_OVERLAP_SENTENCES,
-) -> list[SentenceWindow]:
-    if not sentences:
-        return []
-
-    token_lengths = [
-        max(1, len(tokenizer(sentence, add_special_tokens=False).input_ids))
-        for sentence in sentences
-    ]
-
-    windows: list[SentenceWindow] = []
-    start_index = 0
-
-    while start_index < len(sentences):
-        token_total = 2
-        end_index = start_index
-
-        while end_index < len(sentences):
-            proposed_length = token_lengths[end_index] + (1 if end_index > start_index else 0)
-
-            if end_index > start_index and token_total + proposed_length > max_window_tokens:
-                break
-
-            token_total += proposed_length
-            end_index += 1
-
-            if token_total >= max_window_tokens:
-                break
-
-        if end_index == start_index:
-            end_index = start_index + 1
-
-        windows.append(
-            SentenceWindow(
-                start_index=start_index,
-                end_index=end_index,
-                sentences=list(sentences[start_index:end_index]),
-            )
-        )
-
-        if end_index >= len(sentences):
-            break
-
-        next_start = max(end_index - overlap_sentences, start_index + 1)
-        start_index = next_start
-
-    return windows
-
-
-def build_sentence_token_spans(
-    sentence_token_lengths: Sequence[int],
-    special_tokens_mask: Sequence[int],
-) -> list[TokenSpan]:
-    regular_positions = [index for index, is_special in enumerate(special_tokens_mask) if not is_special]
-    required_tokens = sum(sentence_token_lengths)
-
-    if len(regular_positions) < required_tokens:
-        raise ValueError("Encoded token sequence was shorter than the expected sentence token lengths.")
-
-    spans: list[TokenSpan] = []
-    cursor = 0
-
-    for token_length in sentence_token_lengths:
-        if token_length <= 0:
-            spans.append(TokenSpan(start=0, end=0))
-            continue
-
-        start = regular_positions[cursor]
-        end = regular_positions[cursor + token_length - 1] + 1
-        spans.append(TokenSpan(start=start, end=end))
-        cursor += token_length
-
-    return spans
-
-
-def aggregate_sentence_attention(attentions: Sequence[Any], sentence_spans: Sequence[TokenSpan], torch_module: Any):
-    if not attentions or not sentence_spans:
-        return torch_module.zeros((0, 0))
-
-    stacked_attentions = torch_module.stack(tuple(attentions), dim=0)
-    integrated_layers = stacked_attentions.max(dim=0).values.squeeze(0)
-    num_heads = int(integrated_layers.shape[0])
-    num_sentences = len(sentence_spans)
-    sentence_attentions = torch_module.zeros(
-        (num_heads, num_sentences, num_sentences),
-        device=integrated_layers.device,
-        dtype=integrated_layers.dtype,
-    )
-
-    for head_index in range(num_heads):
-        for source_index, source_span in enumerate(sentence_spans):
-            if source_span.end <= source_span.start:
-                continue
-
-            for target_index, target_span in enumerate(sentence_spans):
-                if target_span.end <= target_span.start:
-                    continue
-
-                attention_slice = integrated_layers[
-                    head_index,
-                    source_span.start:source_span.end,
-                    target_span.start:target_span.end,
-                ]
-                if attention_slice.numel():
-                    sentence_attentions[head_index, source_index, target_index] = attention_slice.max()
-
-    return sentence_attentions.max(dim=0).values
-
-
 class BaseSemanticMarkdownAnalyzer:
     model_name = DEFAULT_MODEL_NAME
     device = "cpu"
 
     def analyze_markdown(self, markdown_text: str) -> list[dict[str, Any]]:
-        analysis_text = markdown_to_analysis_text(markdown_text)
-        sentences = sentence_tokenize(analysis_text)
+        from backend.savis.attention import sentence_tokenize_text
+
+        sentences = sentence_tokenize_text(markdown_text)
 
         if not sentences:
             return []
@@ -392,7 +195,7 @@ class BaseSemanticMarkdownAnalyzer:
     def analyze_document(self, markdown_text: str) -> dict[str, Any]:
         sentence_weights = self.analyze_markdown(markdown_text)
         return {
-            "analysisText": markdown_to_analysis_text(markdown_text),
+            "analysisText": markdown_text.replace("\r\n", "\n").replace("\r", "\n"),
             "tokenCount": 0,
             "sentenceCount": len(sentence_weights),
             "sentenceWeights": sentence_weights,
@@ -407,6 +210,8 @@ class BaseSemanticMarkdownAnalyzer:
         self,
         sentences: Sequence[str],
         raw_scores: Sequence[float],
+        *,
+        sentence_source_offsets: Sequence[tuple[int | None, int | None]] | None = None,
     ) -> list[dict[str, Any]]:
         if len(raw_scores) != len(sentences):
             raise ValueError("Sentence score count did not match the number of extracted sentences.")
@@ -414,16 +219,25 @@ class BaseSemanticMarkdownAnalyzer:
         normalized_scores = normalize_scores(raw_scores)
         bands = assign_score_bands(normalized_scores)
 
-        return [
-            {
-                "index": index,
-                "sentence": sentence,
-                "normalizedSentence": normalize_sentence(sentence),
-                "weight": weight,
-                "band": bands[index],
-            }
-            for index, (sentence, weight) in enumerate(zip(sentences, normalized_scores))
-        ]
+        if sentence_source_offsets is None:
+            sentence_source_offsets = [(None, None) for _ in sentences]
+
+        payloads: list[dict[str, Any]] = []
+        for index, (sentence, weight) in enumerate(zip(sentences, normalized_scores)):
+            source_start, source_end = sentence_source_offsets[index]
+            payloads.append(
+                {
+                    "index": index,
+                    "sentence": sentence,
+                    "normalizedSentence": normalize_sentence(sentence),
+                    "weight": weight,
+                    "band": bands[index],
+                    "sourceStart": source_start,
+                    "sourceEnd": source_end,
+                }
+            )
+
+        return payloads
 
     def compute_raw_scores(self, sentences: Sequence[str]) -> Sequence[float]:
         raise NotImplementedError
@@ -461,28 +275,22 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
     def compute_raw_scores(self, sentences: Sequence[str]) -> Sequence[float]:
         if not sentences:
             return []
-        state = self._compute_state(sentences)
+        state = self._compute_state("\n".join(sentences))
         return state.raw_scores
 
     def analyze_markdown(self, markdown_text: str) -> list[dict[str, Any]]:
-        analysis_text = markdown_to_analysis_text(markdown_text)
-        sentences = sentence_tokenize(analysis_text)
-
-        if not sentences:
+        if not markdown_text.strip():
             self._cached_state = None
             return []
 
-        state = self._compute_state(sentences, analysis_text=analysis_text)
+        state = self._compute_state(markdown_text)
         return state.sentence_payloads
 
     def analyze_document(self, markdown_text: str) -> dict[str, Any]:
-        analysis_text = markdown_to_analysis_text(markdown_text)
-        sentences = sentence_tokenize(analysis_text)
-
-        if not sentences:
+        if not markdown_text.strip():
             self._cached_state = None
             return {
-                "analysisText": analysis_text,
+                "analysisText": markdown_text.replace("\r\n", "\n").replace("\r", "\n"),
                 "tokenCount": 0,
                 "sentenceCount": 0,
                 "sentenceWeights": [],
@@ -490,7 +298,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
                 "warnings": [],
             }
 
-        state = self._compute_state(sentences, analysis_text=analysis_text)
+        state = self._compute_state(markdown_text)
         return {
             "analysisText": state.analysis_text,
             "tokenCount": state.token_count,
@@ -501,12 +309,10 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         }
 
     def analyze_sentence_pair(self, markdown_text: str, sentence_x_index: int, sentence_y_index: int) -> dict[str, Any]:
-        analysis_text = markdown_to_analysis_text(markdown_text)
-        sentences = sentence_tokenize(analysis_text)
-        if not sentences:
+        if not markdown_text.strip():
             raise ValueError("No analyzable sentences were found in the provided markdown.")
 
-        state = self._compute_state(sentences, analysis_text=analysis_text)
+        state = self._compute_state(markdown_text)
         sentence_count = len(state.sentences)
         if not 0 <= sentence_x_index < sentence_count or not 0 <= sentence_y_index < sentence_count:
             raise ValueError("Sentence indices were outside the available sentence range.")
@@ -542,12 +348,12 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
 
     def _compute_state(
         self,
-        sentences: Sequence[str],
-        *,
-        analysis_text: str | None = None,
+        markdown_text: str,
     ) -> SAVISDocumentState:
-        prepared_text = "\n".join(sentence.strip() for sentence in sentences if sentence.strip())
-        if not prepared_text:
+        from backend.savis.attention import map_sentences_to_source_offsets, sentence_tokenize_text
+
+        prepared_text = markdown_text.replace("\r\n", "\n").replace("\r", "\n")
+        if not prepared_text.strip():
             raise ValueError("No analyzable sentences were found in the provided text.")
 
         if self._cached_state and self._cached_state.cache_key == prepared_text:
@@ -580,7 +386,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
                 ) from exc
             raise
 
-        isa = self.isa_class(sequences, attentions, tokenizer)
+        isa = self.isa_class(sequences, attentions, tokenizer, source_text=prepared_text)
         token_attention_tensor = isa.head_attentions[0].max(dim=0).values.detach().cpu()
         sentence_attention_tensor = isa.sentence_attention.detach().cpu()
         had_non_finite_token_attention = self._has_non_finite_tensor_values(token_attention_tensor)
@@ -600,13 +406,24 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
 
         resolved_sentences = list(isa.sentences)
         sentence_boundaries_ids = list(isa.sentence_boundaries_ids)
-        usable_count = min(len(resolved_sentences), int(sentence_attention_tensor.shape[0]))
+        sentence_source_offsets = list(isa.sentence_source_offsets)
+        usable_count = min(
+            len(resolved_sentences),
+            len(sentence_source_offsets),
+            int(sentence_attention_tensor.shape[0]),
+        )
 
         if usable_count == 0:
-            resolved_sentences = list(sentences)
-            usable_count = min(len(resolved_sentences), int(sentence_attention_tensor.shape[0]))
+            resolved_sentences = sentence_tokenize_text(prepared_text)
+            sentence_source_offsets = map_sentences_to_source_offsets(prepared_text, resolved_sentences)
+            usable_count = min(
+                len(resolved_sentences),
+                len(sentence_source_offsets),
+                int(sentence_attention_tensor.shape[0]),
+            )
 
         resolved_sentences = resolved_sentences[:usable_count]
+        sentence_source_offsets = sentence_source_offsets[:usable_count]
         trimmed_attention = sentence_attention_tensor[:usable_count, :usable_count]
 
         if token_count > HIGH_MEMORY_WARNING_TOKENS:
@@ -614,9 +431,13 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
                 "This document is large enough that full attention extraction may be slow or memory intensive."
             )
 
-        if usable_count < len(sentences):
+        if usable_count < len(isa.sentences):
             warnings.append(
-                "Sentence alignment between the SAVIS tokenizer pass and the markdown sentence split was truncated."
+                "Sentence alignment from the SAVIS tokenizer pass was truncated."
+            )
+        if any(source_start is None or source_end is None for source_start, source_end in sentence_source_offsets):
+            warnings.append(
+                "Some sentence source ranges could not be mapped back onto the original markdown exactly."
             )
         if had_non_finite_sentence_attention:
             warnings.append(
@@ -639,7 +460,11 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
             )
             raw_scores = sanitize_numeric_sequence(incoming_scores.tolist())
 
-        sentence_payloads = self._build_sentence_payloads(resolved_sentences, raw_scores)
+        sentence_payloads = self._build_sentence_payloads(
+            resolved_sentences,
+            raw_scores,
+            sentence_source_offsets=sentence_source_offsets,
+        )
         tokens = tokenizer.convert_ids_to_tokens(input_ids[0].detach().cpu())
 
         del isa
@@ -650,7 +475,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
 
         state = SAVISDocumentState(
             cache_key=prepared_text,
-            analysis_text=analysis_text or "\n".join(resolved_sentences),
+            analysis_text=prepared_text,
             prepared_text=prepared_text,
             token_count=token_count,
             sentences=resolved_sentences,
@@ -660,10 +485,8 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
             tokens=tokens,
             token_attention=token_attention_tensor,
             sentence_boundaries_ids=sentence_boundaries_ids,
+            sentence_source_offsets=sentence_source_offsets,
             warnings=warnings,
         )
         self._cached_state = state
         return state
-
-
-SlidingWindowISAAnalyzer = FullContextSAVISAnalyzer

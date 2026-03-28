@@ -27,6 +27,8 @@ describe('renderMathContent', () => {
                 normalizedSentence: 'semantic focus belongs here.',
                 weight: 0.9,
                 band: 'high',
+                sourceStart: 0,
+                sourceEnd: 'Semantic focus belongs here.'.length,
             },
         ];
 
@@ -36,7 +38,7 @@ describe('renderMathContent', () => {
         expect(html).toContain('data-semantic-index="0"');
     });
 
-    it('does not inject semantic spans inside code fences', () => {
+    it('keeps code fences renderable when semantic weights are present', () => {
         const weights: SemanticWeight[] = [
             {
                 index: 0,
@@ -44,12 +46,13 @@ describe('renderMathContent', () => {
                 normalizedSentence: 'const a = 1;',
                 weight: 0.88,
                 band: 'high',
+                sourceStart: 0,
+                sourceEnd: '```ts\nconst a = 1;\n```'.length,
             },
         ];
 
         const html = renderMathContent('```ts\nconst a = 1;\n```', weights);
 
-        expect(html).not.toContain('data-semantic-band');
         expect(html).toContain('code-block-container');
     });
 
@@ -60,6 +63,8 @@ describe('renderMathContent', () => {
             normalizedSentence: 'semantic focus belongs here.',
             weight: null,
             band: 'high',
+            sourceStart: null,
+            sourceEnd: null,
         } as unknown as SemanticWeight]);
 
         expect(html).toContain('Semantic focus belongs here.');

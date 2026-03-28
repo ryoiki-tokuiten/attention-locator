@@ -12,6 +12,7 @@ from transformers.utils import logging as hf_logging
 
 hf_logging.disable_progress_bar()
 SMALL_GGUF_STABLE_DTYPE_BYTES = 768 * 1024 * 1024
+ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
 
 
 def _resolve_device():
@@ -30,6 +31,65 @@ def _safe_sent_tokenize(text):
         return nltk.sent_tokenize(text)
     except LookupError:
         return _fallback_sentence_tokenizer.tokenize(text)
+
+
+def sentence_tokenize_text(text: str) -> list[str]:
+    normalized_text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return [sentence.strip() for sentence in _safe_sent_tokenize(normalized_text) if sentence.strip()]
+
+
+def _build_normalized_offset_map(text: str) -> tuple[str, list[int]]:
+    normalized_chars: list[str] = []
+    offset_map: list[int] = []
+
+    for index, char in enumerate(text):
+        if ZERO_WIDTH_RE.match(char):
+            continue
+        if char.isspace():
+            if not normalized_chars or normalized_chars[-1] == " ":
+                continue
+            normalized_chars.append(" ")
+            offset_map.append(index)
+            continue
+
+        normalized_chars.append(char.lower())
+        offset_map.append(index)
+
+    while normalized_chars and normalized_chars[0] == " ":
+        normalized_chars.pop(0)
+        offset_map.pop(0)
+
+    while normalized_chars and normalized_chars[-1] == " ":
+        normalized_chars.pop()
+        offset_map.pop()
+
+    return "".join(normalized_chars), offset_map
+
+
+def map_sentences_to_source_offsets(text: str, sentences: list[str]) -> list[tuple[int | None, int | None]]:
+    normalized_source, offset_map = _build_normalized_offset_map(text)
+    search_start = 0
+    offsets: list[tuple[int | None, int | None]] = []
+
+    for sentence in sentences:
+        normalized_sentence, _ = _build_normalized_offset_map(sentence)
+        if not normalized_sentence:
+            offsets.append((None, None))
+            continue
+
+        match_index = normalized_source.find(normalized_sentence, search_start)
+        if match_index < 0:
+            match_index = normalized_source.find(normalized_sentence)
+        if match_index < 0:
+            offsets.append((None, None))
+            continue
+
+        source_start = offset_map[match_index]
+        source_end = offset_map[match_index + len(normalized_sentence) - 1] + 1
+        offsets.append((source_start, source_end))
+        search_start = match_index + len(normalized_sentence)
+
+    return offsets
 
 
 def _resolve_model_source(model_name):
@@ -106,15 +166,14 @@ def _model_input_device(model, fallback_device):
 
 
 def prepare_document_text(text, segment_sentences=True):
+    normalized_text = text.replace("\r\n", "\n").replace("\r", "\n")
+
     if segment_sentences:
-        segments = [sentence.strip() for sentence in _safe_sent_tokenize(text) if sentence.strip()]
-    else:
-        segments = [line.strip() for line in text.splitlines() if line.strip()]
+        segments = sentence_tokenize_text(normalized_text)
+        if segments:
+            return "\n".join(segments)
 
-    if not segments and text.strip():
-        segments = [text.strip()]
-
-    return "\n".join(segments)
+    return normalized_text
 
 
 class Attention:
@@ -211,7 +270,7 @@ class Attention:
 
 
 class ISA:
-    def __init__(self, generated_sequences, attentions, tokenizer):
+    def __init__(self, generated_sequences, attentions, tokenizer, source_text: str | None = None):
         self.tokenizer: PreTrainedTokenizer = tokenizer
         self.attention_type = 'enc' if isinstance(attentions[0], torch.Tensor) else 'dec'
 
@@ -229,6 +288,11 @@ class ISA:
         self.sentence_boundaries_text = sentence_boundaries_text
         self.sentence_boundaries_ids = sentence_boundaries_ids
         self.sentences = sentences
+        self.sentence_source_offsets = (
+            map_sentences_to_source_offsets(source_text, sentences)
+            if source_text is not None
+            else [(None, None) for _ in sentences]
+        )
         self.attentions = attentions
         self.layer_attentions = layer_attentions
         self.head_attentions = head_attentions

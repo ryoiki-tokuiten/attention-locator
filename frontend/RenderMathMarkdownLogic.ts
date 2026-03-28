@@ -17,13 +17,7 @@ import type { SemanticWeight } from './src/types/semantic';
 import { renderIconMarkup } from './src/UI/Icons';
 
 const MAX_CODE_HIGHLIGHT_SIZE = 50000;
-const ZERO_WIDTH_RE = /[\u200B-\u200D\uFEFF]/g;
-const WHITESPACE_RE = /\s+/g;
-const SENTENCE_FALLBACK_RE = /[^.!?\n]+(?:[.!?]+|$)/g;
 const SKIPPED_SEMANTIC_TAGS = new Set([
-    'pre',
-    'code',
-    'math',
     'annotation',
     'semantics',
     'svg',
@@ -43,27 +37,21 @@ const SEMANTIC_BLOCK_TAGS = new Set([
     'h6',
     'td',
     'th',
+    'blockquote',
+    'pre',
 ]);
-
-type SemanticQueueMap = Map<string, SemanticWeight[]>;
-
-interface SentenceSegment {
-    start: number;
-    end: number;
-    text: string;
-}
 
 interface TextLeaf {
     node: HastText;
     parent: HastRoot | HastElement;
     index: number;
-    start: number;
-    end: number;
+    sourceStart: number;
+    sourceEnd: number;
 }
 
 interface SemanticRange {
-    start: number;
-    end: number;
+    sourceStart: number;
+    sourceEnd: number;
     semantic: SemanticWeight;
 }
 
@@ -102,15 +90,6 @@ export function generateCodeId(): string {
     return `code-${nanoid(9)}`;
 }
 
-function normalizeSentence(text: string): string {
-    return text
-        .normalize('NFKC')
-        .replace(ZERO_WIDTH_RE, '')
-        .replace(WHITESPACE_RE, ' ')
-        .trim()
-        .toLowerCase();
-}
-
 function asFiniteSemanticWeight(weight: unknown, fallback = 0.5): number {
     const numeric = typeof weight === 'number' ? weight : Number(weight);
     if (!Number.isFinite(numeric)) {
@@ -136,15 +115,9 @@ function isSkippedSemanticElement(element: HastElement): boolean {
 
     const classes = toClassList(element.properties?.className);
     return classes.some((className) =>
-        className === 'katex' ||
-        className === 'katex-display' ||
         className === 'exec-image-item' ||
         className === 'exec-image-grid' ||
-        className === 'exec-output-block' ||
-        className === 'code-block-container' ||
-        className === 'code-block-content' ||
-        className === 'code-block-header' ||
-        className === 'shiki'
+        className === 'exec-output-block'
     );
 }
 
@@ -158,70 +131,6 @@ function shouldAnnotateElement(element: HastElement): boolean {
     }
 
     return true;
-}
-
-function splitTextIntoSentences(text: string): SentenceSegment[] {
-    const segments: SentenceSegment[] = [];
-
-    if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
-        const segmenter = new Intl.Segmenter('en', { granularity: 'sentence' });
-        for (const part of segmenter.segment(text)) {
-            if (!part.segment.trim()) {
-                continue;
-            }
-            segments.push({
-                start: part.index,
-                end: part.index + part.segment.length,
-                text: part.segment,
-            });
-        }
-        return segments;
-    }
-
-    for (const match of text.matchAll(SENTENCE_FALLBACK_RE)) {
-        const value = match[0];
-        if (!value.trim()) {
-            continue;
-        }
-        const start = match.index ?? 0;
-        segments.push({
-            start,
-            end: start + value.length,
-            text: value,
-        });
-    }
-
-    return segments;
-}
-
-function buildSemanticQueues(semanticWeights: SemanticWeight[]): SemanticQueueMap {
-    const queues: SemanticQueueMap = new Map();
-
-    for (const weight of semanticWeights) {
-        const normalizedWeight = asFiniteSemanticWeight(weight.weight, Number.NaN);
-        const key = weight.normalizedSentence || normalizeSentence(weight.sentence);
-        if (!key || !Number.isFinite(normalizedWeight)) {
-            continue;
-        }
-
-        const queue = queues.get(key) || [];
-        queue.push({
-            ...weight,
-            weight: normalizedWeight,
-        });
-        queues.set(key, queue);
-    }
-
-    return queues;
-}
-
-function consumeSemanticWeight(queues: SemanticQueueMap, normalizedSentence: string): SemanticWeight | null {
-    const queue = queues.get(normalizedSentence);
-    if (!queue?.length) {
-        return null;
-    }
-
-    return queue.shift() || null;
 }
 
 function appendStyleDeclaration(existingStyle: unknown, declaration: string): string {
@@ -325,20 +234,30 @@ function createSemanticSpan(text: string, semantic: SemanticWeight): HastElement
     };
 }
 
+function getNodeOffset(node: HastRoot | HastElement | HastText, edge: 'start' | 'end'): number | null {
+    const position = node.position as {
+        start?: { offset?: number };
+        end?: { offset?: number };
+    } | undefined;
+
+    const offset = position?.[edge]?.offset;
+    return typeof offset === 'number' ? offset : null;
+}
+
 function collectTextLeaves(
     node: HastRoot | HastElement | HastText,
     leaves: TextLeaf[],
-    cursor: { value: number },
     parent?: HastRoot | HastElement,
     index?: number,
     skipSemantic = false,
 ) {
     if (node.type === 'text') {
         if (!skipSemantic && parent && typeof index === 'number') {
-            const start = cursor.value;
-            const end = start + node.value.length;
-            leaves.push({ node, parent, index, start, end });
-            cursor.value = end;
+            const sourceStart = getNodeOffset(node, 'start');
+            const sourceEnd = getNodeOffset(node, 'end');
+            if (sourceStart != null && sourceEnd != null && sourceEnd > sourceStart) {
+                leaves.push({ node, parent, index, sourceStart, sourceEnd });
+            }
         }
         return;
     }
@@ -354,7 +273,7 @@ function collectTextLeaves(
     }
 
     node.children.forEach((child, childIndex) => {
-        collectTextLeaves(child as HastRoot | HastElement | HastText, leaves, cursor, node, childIndex, shouldSkip);
+        collectTextLeaves(child as HastRoot | HastElement | HastText, leaves, node, childIndex, shouldSkip);
     });
 }
 
@@ -363,11 +282,13 @@ function applySemanticRanges(leaves: TextLeaf[], ranges: SemanticRange[]) {
         return;
     }
 
-    const orderedLeaves = [...leaves].sort((left, right) => right.start - left.start);
-    const orderedRanges = [...ranges].sort((left, right) => left.start - right.start);
+    const orderedLeaves = [...leaves].sort((left, right) => right.sourceStart - left.sourceStart);
+    const orderedRanges = [...ranges].sort((left, right) => left.sourceStart - right.sourceStart);
 
     for (const leaf of orderedLeaves) {
-        const applicableRanges = orderedRanges.filter((range) => range.end > leaf.start && range.start < leaf.end);
+        const applicableRanges = orderedRanges.filter(
+            (range) => range.sourceEnd > leaf.sourceStart && range.sourceStart < leaf.sourceEnd,
+        );
         if (!applicableRanges.length) {
             continue;
         }
@@ -376,8 +297,10 @@ function applySemanticRanges(leaves: TextLeaf[], ranges: SemanticRange[]) {
         let cursor = 0;
 
         for (const range of applicableRanges) {
-            const localStart = Math.max(0, range.start - leaf.start);
-            const localEnd = Math.min(leaf.node.value.length, range.end - leaf.start);
+            const overlapStart = Math.max(leaf.sourceStart, range.sourceStart);
+            const overlapEnd = Math.min(leaf.sourceEnd, range.sourceEnd);
+            const localStart = Math.max(0, overlapStart - leaf.sourceStart);
+            const localEnd = Math.min(leaf.node.value.length, overlapEnd - leaf.sourceStart);
 
             if (localStart > cursor) {
                 fragments.push({ type: 'text', value: leaf.node.value.slice(cursor, localStart) });
@@ -398,45 +321,32 @@ function applySemanticRanges(leaves: TextLeaf[], ranges: SemanticRange[]) {
     }
 }
 
-function annotateElementWithSemanticWeights(element: HastElement, queues: SemanticQueueMap) {
+function annotateElementWithSemanticWeights(element: HastElement, semanticWeights: SemanticWeight[]) {
     const leaves: TextLeaf[] = [];
-    collectTextLeaves(element, leaves, { value: 0 });
+    collectTextLeaves(element, leaves);
 
     if (!leaves.length) {
         return;
     }
 
-    const visibleText = leaves.map((leaf) => leaf.node.value).join('');
-    if (!visibleText.trim()) {
-        return;
-    }
-
-    const ranges: SemanticRange[] = [];
-
-    for (const sentence of splitTextIntoSentences(visibleText)) {
-        const normalized = normalizeSentence(sentence.text);
-        if (!normalized) {
-            continue;
-        }
-
-        const semantic = consumeSemanticWeight(queues, normalized);
-        if (!semantic) {
-            continue;
-        }
-
-        const leadingWhitespace = sentence.text.match(/^\s*/)?.[0].length ?? 0;
-        const trailingWhitespace = sentence.text.match(/\s*$/)?.[0].length ?? 0;
-        const trimmedStart = sentence.start + leadingWhitespace;
-        const trimmedEnd = sentence.end - trailingWhitespace;
-
-        if (trimmedEnd > trimmedStart) {
-            ranges.push({
-                start: trimmedStart,
-                end: trimmedEnd,
-                semantic,
-            });
-        }
-    }
+    const blockStart = Math.min(...leaves.map((leaf) => leaf.sourceStart));
+    const blockEnd = Math.max(...leaves.map((leaf) => leaf.sourceEnd));
+    const ranges: SemanticRange[] = semanticWeights
+        .filter((semantic) => (
+            semantic.sourceStart != null &&
+            semantic.sourceEnd != null &&
+            semantic.sourceEnd > semantic.sourceStart &&
+            semantic.sourceEnd > blockStart &&
+            semantic.sourceStart < blockEnd
+        ))
+        .map((semantic) => ({
+            sourceStart: semantic.sourceStart as number,
+            sourceEnd: semantic.sourceEnd as number,
+            semantic: {
+                ...semantic,
+                weight: asFiniteSemanticWeight(semantic.weight),
+            },
+        }));
 
     if (ranges.length) {
         const strongestSemantic = ranges.reduce((strongest, range) => (
@@ -704,8 +614,6 @@ function preprocessCodeExecutionBlocks(content: string): { processed: string; bl
 
 function rehypeAddClasses(semanticWeights: SemanticWeight[]) {
     return () => {
-        const queues = buildSemanticQueues(semanticWeights);
-
         return (tree: HastRoot) => {
             const visit = (node: HastRoot | HastElement | HastText) => {
                 if (node.type === 'text') {
@@ -766,7 +674,7 @@ function rehypeAddClasses(semanticWeights: SemanticWeight[]) {
                 }
 
                 if (node.type === 'element' && shouldAnnotateElement(node) && !isSkippedSemanticElement(node)) {
-                    annotateElementWithSemanticWeights(node, queues);
+                    annotateElementWithSemanticWeights(node, semanticWeights);
                 }
             };
 

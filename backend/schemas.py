@@ -23,6 +23,8 @@ class SentenceWeightResponse(BaseModel):
     normalizedSentence: str
     weight: float
     band: SemanticBand
+    sourceStart: int | None = None
+    sourceEnd: int | None = None
 
 
 class HealthResponse(BaseModel):
