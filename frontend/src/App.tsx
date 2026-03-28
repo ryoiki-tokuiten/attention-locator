@@ -1,4 +1,5 @@
 import React, { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { FileText, LoaderCircle, PanelLeftClose, PanelLeftOpen, SwatchBook } from 'lucide-react';
 
 import { GlobalImagePreviewModal, RenderMathMarkdown } from '../RenderMathMarkdown';
 import AttentionExplorer, { type AttentionTab } from './AttentionExplorer';
@@ -124,19 +125,6 @@ function sentenceCount(content: string) {
     return matches ? matches.length : 0;
 }
 
-function statusLabel(health: HealthPayload | null, isAnalyzing: boolean, analysisError: string | null) {
-    if (analysisError) {
-        return 'Semantic fallback';
-    }
-    if (isAnalyzing) {
-        return 'Analyzing';
-    }
-    if (health?.ready) {
-        return 'Model ready';
-    }
-    return 'Waiting for backend';
-}
-
 function previewPillLabel(
     activeTab: AttentionTab,
     semanticWeights: SemanticWeight[],
@@ -170,6 +158,48 @@ function previewPillLabel(
     return pairAttention ? 'Inspecting selected sentence pair' : 'Choose a sentence pair first';
 }
 
+function previewActivityState(
+    activeTab: AttentionTab,
+    isInputPending: boolean,
+    isAnalyzing: boolean,
+    isLoadingDocumentAttention: boolean,
+    isLoadingPairAttention: boolean,
+) {
+    if (isInputPending) {
+        return {
+            kicker: 'Live typing',
+            title: 'Preparing the next semantic pass',
+            description: 'Your text is already visible while the updated sentence weights queue in the background.',
+        };
+    }
+
+    if (isAnalyzing) {
+        return {
+            kicker: 'Semantic refresh',
+            title: 'Recomputing sentence emphasis',
+            description: 'We are refreshing the rendered pill intensities so the preview reflects the latest wording.',
+        };
+    }
+
+    if (activeTab === 'sentence' && isLoadingDocumentAttention) {
+        return {
+            kicker: 'Attention map',
+            title: 'Building the sentence matrix',
+            description: 'The model is integrating full-document attention so the sentence view can open with fresh scores.',
+        };
+    }
+
+    if (activeTab === 'token' && isLoadingPairAttention) {
+        return {
+            kicker: 'Token drill-down',
+            title: 'Resolving pair-level attention',
+            description: 'We are extracting token interactions for the selected sentence pair.',
+        };
+    }
+
+    return null;
+}
+
 const ATTENTION_LEGEND_ITEMS = [
     {
         label: 'Lower attention',
@@ -190,6 +220,7 @@ const ATTENTION_LEGEND_ITEMS = [
 
 const App: React.FC = () => {
     const [content, setContent] = useState(INITIAL_MARKDOWN);
+    const [isEditorCollapsed, setIsEditorCollapsed] = useState(false);
     const [semanticWeights, setSemanticWeights] = useState<SemanticWeight[]>([]);
     const [health, setHealth] = useState<HealthPayload | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -445,7 +476,14 @@ const App: React.FC = () => {
         return { words, sentences, highlighted };
     }, [content, semanticWeights]);
 
-    const headerStatus = statusLabel(health, isAnalyzing, analysisError);
+    const isInputPending = content !== deferredContent;
+    const previewActivity = previewActivityState(
+        activeTab,
+        isInputPending,
+        isAnalyzing,
+        isLoadingDocumentAttention,
+        isLoadingPairAttention,
+    );
 
     const handleSelectPair = ({ sentenceXIndex, sentenceYIndex }: { sentenceXIndex: number; sentenceYIndex: number }) => {
         startTransition(() => {
@@ -477,48 +515,74 @@ const App: React.FC = () => {
                         <p className="eyebrow">Local sentence attention</p>
                         <h1>SAVIS Attention Markdown</h1>
                         <p className="hero-copy">
-                            The markdown renderer stays intact, while a full-context local causal model powers both sentence-level emphasis and a closer look at sentence and token attention patterns.
+                            A preview-first markdown workspace for seeing where the model concentrates, with sentence and token attention tucked behind the same reading surface.
                         </p>
                     </div>
 
-                    <div className="hero-metrics">
-                        <div className="metric-card">
-                            <span className="metric-label">Status</span>
-                            <strong>{headerStatus}</strong>
-                            <small>
-                                {health?.modelName ?? 'local model'} on {health?.device ?? 'pending'}
-                            </small>
-                        </div>
-                        <div className="metric-card">
-                            <span className="metric-label">Document</span>
-                            <strong>{stats.words} words</strong>
-                            <small>{stats.sentences} detected sentences</small>
-                        </div>
-                        <div className="metric-card">
-                            <span className="metric-label">Attention cap</span>
-                            <strong>{health?.maxInputTokens ?? 'unknown'} tokens</strong>
-                            <small>{stats.highlighted} highlighted sentences</small>
-                        </div>
+                    <div className="hero-aside">
+                        <aside className="legend-showcase" aria-label="Attention color legend">
+                            <div className="legend-showcase-header">
+                                <div>
+                                    <p className="panel-label">Attention spectrum</p>
+                                    <h2>Legend</h2>
+                                </div>
+                                <SwatchBook size={18} />
+                            </div>
+                            <div className="attention-legend-bar" />
+                            <div className="legend-showcase-grid">
+                                {ATTENTION_LEGEND_ITEMS.map((item) => (
+                                    <div key={item.label} className="legend-showcase-item">
+                                        <span className={`attention-stop ${item.className}`} />
+                                        <div>
+                                            <strong>{item.label}</strong>
+                                            <small>{item.description}</small>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </aside>
                     </div>
                 </header>
 
-                <section className="panel-grid">
-                    <section className="editor-panel glass-panel">
-                        <div className="panel-header">
-                            <div>
-                                <p className="panel-label">Markdown input</p>
-                                <h2>Compose or paste a document</h2>
-                            </div>
-                            <span className="panel-pill">{isAnalyzing ? 'Debounced analysis in progress' : 'Instant render, delayed weighting'}</span>
-                        </div>
+                <section className={`panel-grid ${isEditorCollapsed ? 'panel-grid-collapsed' : ''}`}>
+                    <section className={`editor-panel glass-panel ${isEditorCollapsed ? 'editor-panel-collapsed' : ''}`}>
+                        <button
+                            type="button"
+                            className="editor-collapse-toggle"
+                            onClick={() => setIsEditorCollapsed((value) => !value)}
+                            aria-label={isEditorCollapsed ? 'Expand editor panel' : 'Collapse editor panel'}
+                            title={isEditorCollapsed ? 'Expand editor panel' : 'Collapse editor panel'}
+                        >
+                            {isEditorCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+                        </button>
 
-                        <textarea
-                            className="editor-textarea"
-                            value={content}
-                            onChange={(event) => setContent(event.target.value)}
-                            spellCheck={false}
-                            placeholder="Paste markdown here..."
-                        />
+                        {isEditorCollapsed ? (
+                            <div className="editor-collapsed-strip">
+                                <FileText size={18} />
+                                <span>Editor</span>
+                                <small>{stats.words} words</small>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="panel-header editor-panel-header">
+                                    <div>
+                                        <p className="panel-label">Markdown input</p>
+                                        <h2>Compose or paste a document</h2>
+                                    </div>
+                                    <span className="panel-pill panel-pill-quiet">
+                                        {isInputPending || isAnalyzing ? 'Live analysis syncing' : 'Preview-first editing'}
+                                    </span>
+                                </div>
+
+                                <textarea
+                                    className="editor-textarea"
+                                    value={content}
+                                    onChange={(event) => setContent(event.target.value)}
+                                    spellCheck={false}
+                                    placeholder="Paste markdown here..."
+                                />
+                            </>
+                        )}
                     </section>
 
                     <section className="preview-panel glass-panel">
@@ -546,20 +610,21 @@ const App: React.FC = () => {
                             </div>
                         ) : null}
 
-                        <div className="attention-legend" aria-label="Attention color legend">
-                            <div className="attention-legend-bar" />
-                            <div className="attention-legend-labels">
-                                {ATTENTION_LEGEND_ITEMS.map((item) => (
-                                    <div key={item.label} className="attention-legend-item">
-                                        <span className={`attention-stop ${item.className}`} />
-                                        <div>
-                                            <strong>{item.label}</strong>
-                                            <small>{item.description}</small>
-                                        </div>
+                        {previewActivity ? (
+                            <div className="preview-activity-card" aria-live="polite">
+                                <div className="preview-activity-header">
+                                    <div className="preview-activity-copy">
+                                        <span className="preview-activity-kicker">{previewActivity.kicker}</span>
+                                        <strong>{previewActivity.title}</strong>
+                                        <span>{previewActivity.description}</span>
                                     </div>
-                                ))}
+                                    <LoaderCircle size={18} className="spin-icon" />
+                                </div>
+                                <div className="preview-activity-track">
+                                    <span className="preview-activity-bar" />
+                                </div>
                             </div>
-                        </div>
+                        ) : null}
 
                         <div className="preview-tab-bar" role="tablist" aria-label="Attention explorer views">
                             {VIEW_TABS.map((tab) => (

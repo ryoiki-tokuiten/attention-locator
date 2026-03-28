@@ -111,7 +111,7 @@ describe('App', () => {
         });
 
         await waitFor(() => {
-            expect(screen.getByText(/Model ready/i)).toBeInTheDocument();
+            expect(screen.getByText(/SAVIS Attention Markdown/i)).toBeInTheDocument();
         }, { timeout: 4000 });
 
         expect(screen.queryByText(/Semantic analysis is unavailable/i)).not.toBeInTheDocument();

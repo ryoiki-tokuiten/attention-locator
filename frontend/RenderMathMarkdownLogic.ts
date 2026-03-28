@@ -279,14 +279,14 @@ function styleForSemanticWeight(weight: number): string {
         { at: 1, color: [220, 38, 38] },
     ]);
     const textColor = interpolateColorStops(normalizedWeight, [
-        { at: 0, color: [238, 252, 242] },
-        { at: 0.5, color: [236, 243, 255] },
-        { at: 1, color: [255, 239, 239] },
+        { at: 0, color: [112, 238, 156] },
+        { at: 0.5, color: [133, 198, 255] },
+        { at: 1, color: [255, 148, 148] },
     ]);
-    const fillOpacity = (0.085 + (normalizedWeight * 0.13)).toFixed(3);
-    const glowOpacity = (0.12 + (normalizedWeight * 0.20)).toFixed(3);
-    const edgeOpacity = (0.16 + (normalizedWeight * 0.16)).toFixed(3);
-    const underlineOpacity = (0.28 + (normalizedWeight * 0.30)).toFixed(3);
+    const fillOpacity = (0.19 + (normalizedWeight * 0.28)).toFixed(3);
+    const glowOpacity = (0.10 + (normalizedWeight * 0.16)).toFixed(3);
+    const edgeOpacity = (0.18 + (normalizedWeight * 0.22)).toFixed(3);
+    const underlineOpacity = (0.24 + (normalizedWeight * 0.22)).toFixed(3);
 
     return [
         `--semantic-weight: ${normalizedWeight.toFixed(3)}`,

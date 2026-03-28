@@ -909,18 +909,11 @@ body.light-mode .exec-rendered-image {
 }
 
 .semantic-block[data-semantic-block-band="high"] {
-    background:
-        radial-gradient(circle at 18% 50%,
-            rgba(var(--semantic-primary-rgb, 138, 127, 248), calc(0.024 + (var(--semantic-weight, 0) * 0.02))) 0%,
-            rgba(var(--semantic-secondary-rgb, 217, 70, 239), calc(0.010 + (var(--semantic-weight, 0) * 0.010))) 28%,
-            rgba(0, 0, 0, 0) 62%);
+    background: none;
 }
 
 .semantic-block[data-semantic-block-band="medium"] {
-    background:
-        radial-gradient(circle at 14% 50%,
-            rgba(var(--semantic-primary-rgb, 138, 127, 248), calc(0.016 + (var(--semantic-weight, 0) * 0.012))) 0%,
-            rgba(0, 0, 0, 0) 54%);
+    background: none;
 }
 
 .semantic-block[data-semantic-block-band="low"] {
@@ -939,58 +932,46 @@ body.light-mode .exec-rendered-image {
     position: relative;
     z-index: 0;
     display: inline;
-    padding: 0 0.045em;
-    margin: 0;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    padding: 0.22em 0.58em 0.30em;
+    margin: 0 0.08em 0.12em 0;
+    border-radius: 999px;
+    border: 1px solid rgba(var(--semantic-primary-rgb), calc(var(--semantic-edge-opacity) * 0.96));
     color: rgb(var(--semantic-text-rgb));
     cursor: help;
-    background:
-        linear-gradient(180deg,
-            rgba(var(--semantic-primary-rgb), 0) 0%,
-            rgba(var(--semantic-primary-rgb), 0) 50%,
-            rgba(var(--semantic-primary-rgb), calc(var(--semantic-fill-opacity) * 0.30)) 50%,
-            rgba(var(--semantic-secondary-rgb), calc(var(--semantic-fill-opacity) * 1.18)) 76%,
-            rgba(var(--semantic-secondary-rgb), calc(var(--semantic-fill-opacity) * 0.56)) 92%,
-            rgba(var(--semantic-secondary-rgb), 0) 96%),
-        linear-gradient(90deg,
-            rgba(var(--semantic-primary-rgb), calc(var(--semantic-underline-opacity) * 0.82)) 0%,
-            rgba(var(--semantic-secondary-rgb), calc(var(--semantic-underline-opacity) * 1.30)) 52%,
-            rgba(var(--semantic-primary-rgb), calc(var(--semantic-underline-opacity) * 0.76)) 100%);
-    background-repeat: no-repeat;
-    background-size: 100% 100%, 100% 3px;
-    background-position: 0 0, 0 calc(100% - 0.02em);
+    background: linear-gradient(135deg,
+        rgba(var(--semantic-primary-rgb), calc(var(--semantic-fill-opacity) * 0.96)) 0%,
+        rgba(var(--semantic-secondary-rgb), calc(var(--semantic-fill-opacity) * 1.24)) 100%);
     box-shadow:
-        inset 0 -2px 0 rgba(var(--semantic-primary-rgb), calc(var(--semantic-edge-opacity) * 1.18)),
-        0 10px 20px -18px rgba(var(--semantic-secondary-rgb), calc(var(--semantic-glow-opacity) * 0.44));
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 10px 24px -18px rgba(var(--semantic-primary-rgb), calc(var(--semantic-glow-opacity) * 1.1));
     transition:
         color 0.25s ease,
-        text-shadow 0.25s ease,
         background 0.25s ease,
         box-shadow 0.25s ease,
+        border-color 0.25s ease,
         filter 0.25s ease;
 }
 
 .semantic-sentence[data-semantic-band="high"] {
     font-weight: 650;
-    text-shadow:
-        0 0 10px rgba(var(--semantic-primary-rgb), calc(var(--semantic-glow-opacity) * 0.66)),
-        0 0 18px rgba(var(--semantic-secondary-rgb), calc(var(--semantic-glow-opacity) * 0.26));
     box-shadow:
-        inset 0 -2px 0 rgba(var(--semantic-primary-rgb), calc(var(--semantic-edge-opacity) + 0.10)),
-        0 10px 24px -18px rgba(var(--semantic-secondary-rgb), calc(var(--semantic-glow-opacity) * 0.34));
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 16px 28px -20px rgba(var(--semantic-secondary-rgb), calc(var(--semantic-glow-opacity) * 1.12));
 }
 
 .semantic-sentence[data-semantic-band="medium"] {
     font-weight: 560;
-    text-shadow: 0 0 8px rgba(var(--semantic-primary-rgb), calc(var(--semantic-glow-opacity) * 0.54));
 }
 
 .semantic-sentence[data-semantic-band="low"] {
-    text-shadow: 0 0 5px rgba(var(--semantic-primary-rgb), calc(var(--semantic-glow-opacity) * 0.32));
+    opacity: 0.96;
 }
 
 .semantic-sentence:hover,
 .semantic-sentence:focus-visible {
-    filter: brightness(1.08) saturate(1.08);
+    filter: brightness(1.05) saturate(1.04);
 }
 
 .semantic-sentence::after {
@@ -1051,14 +1032,13 @@ body.light-mode .exec-rendered-image {
 
 body.light-mode .semantic-sentence[data-semantic-band="high"] {
     color: rgb(var(--semantic-text-rgb));
-    text-shadow: 0 0 6px rgba(var(--semantic-primary-rgb), calc(var(--semantic-glow-opacity) * 0.24));
     box-shadow:
-        inset 0 -1px 0 rgba(var(--semantic-primary-rgb), calc(var(--semantic-edge-opacity) + 0.04)),
+        inset 0 1px 0 rgba(255, 255, 255, 0.24),
         0 10px 22px -24px rgba(var(--semantic-secondary-rgb), calc(var(--semantic-glow-opacity) * 0.20));
 }
 
 body.light-mode .semantic-sentence[data-semantic-band="medium"] {
-    text-shadow: none;
+    color: rgb(var(--semantic-text-rgb));
 }
 
 body.light-mode .semantic-block {
