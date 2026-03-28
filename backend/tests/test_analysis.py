@@ -58,6 +58,9 @@ Math: $x^2 + y^2$.
     def test_normalize_scores_uses_midpoint_when_scores_are_equal(self):
         self.assertEqual(normalize_scores([0.0, 0.0, 0.0]), [0.5, 0.5, 0.5])
 
+    def test_normalize_scores_stabilizes_non_finite_values(self):
+        self.assertEqual(normalize_scores([float("nan"), 5.0, float("inf")]), [0.0, 1.0, 0.0])
+
     def test_assign_score_bands_uses_adaptive_document_thresholds(self):
         bands = assign_score_bands([0.0, 0.12, 0.29, 0.41, 0.57, 0.74, 0.93])
 

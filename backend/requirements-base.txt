@@ -1,5 +1,7 @@
 fastapi
 uvicorn
 transformers
+accelerate
+gguf>=0.10.0
 nltk
 protobuf

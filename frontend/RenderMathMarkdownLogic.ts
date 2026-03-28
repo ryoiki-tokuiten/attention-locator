@@ -111,6 +111,14 @@ function normalizeSentence(text: string): string {
         .toLowerCase();
 }
 
+function asFiniteSemanticWeight(weight: unknown, fallback = 0.5): number {
+    const numeric = typeof weight === 'number' ? weight : Number(weight);
+    if (!Number.isFinite(numeric)) {
+        return fallback;
+    }
+    return Math.min(1, Math.max(0, numeric));
+}
+
 function toClassList(value: unknown): string[] {
     if (Array.isArray(value)) {
         return value.map(String);
@@ -190,13 +198,17 @@ function buildSemanticQueues(semanticWeights: SemanticWeight[]): SemanticQueueMa
     const queues: SemanticQueueMap = new Map();
 
     for (const weight of semanticWeights) {
+        const normalizedWeight = asFiniteSemanticWeight(weight.weight, Number.NaN);
         const key = weight.normalizedSentence || normalizeSentence(weight.sentence);
-        if (!key) {
+        if (!key || !Number.isFinite(normalizedWeight)) {
             continue;
         }
 
         const queue = queues.get(key) || [];
-        queue.push(weight);
+        queue.push({
+            ...weight,
+            weight: normalizedWeight,
+        });
         queues.set(key, queue);
     }
 
@@ -255,7 +267,7 @@ function rgbVar(color: [number, number, number]): string {
 }
 
 function styleForSemanticWeight(weight: number): string {
-    const normalizedWeight = Math.min(1, Math.max(0, weight));
+    const normalizedWeight = asFiniteSemanticWeight(weight);
     const primaryColor = interpolateColorStops(normalizedWeight, [
         { at: 0, color: [64, 196, 110] },
         { at: 0.5, color: [80, 154, 255] },
@@ -289,22 +301,25 @@ function styleForSemanticWeight(weight: number): string {
 }
 
 function semanticScoreLabel(semantic: SemanticWeight): string {
-    return `Attention score ${semantic.weight.toFixed(3)} · ${semantic.band}`;
+    const weight = asFiniteSemanticWeight(semantic.weight);
+    return `Attention score ${weight.toFixed(3)} · ${semantic.band}`;
 }
 
 function createSemanticSpan(text: string, semantic: SemanticWeight): HastElement {
+    const weight = asFiniteSemanticWeight(semantic.weight);
+
     return {
         type: 'element',
         tagName: 'span',
         properties: {
             className: ['semantic-sentence', `semantic-${semantic.band}`],
             'data-semantic-band': semantic.band,
-            'data-semantic-weight': semantic.weight.toFixed(3),
+            'data-semantic-weight': weight.toFixed(3),
             'data-semantic-index': String(semantic.index),
-            'data-semantic-score': semantic.weight.toFixed(3),
+            'data-semantic-score': weight.toFixed(3),
             'data-semantic-score-label': semanticScoreLabel(semantic),
             title: semanticScoreLabel(semantic),
-            style: styleForSemanticWeight(semantic.weight),
+            style: styleForSemanticWeight(weight),
         },
         children: [{ type: 'text', value: text }],
     };
@@ -427,6 +442,7 @@ function annotateElementWithSemanticWeights(element: HastElement, queues: Semant
         const strongestSemantic = ranges.reduce((strongest, range) => (
             range.semantic.weight > strongest.weight ? range.semantic : strongest
         ), ranges[0].semantic);
+        const strongestWeight = asFiniteSemanticWeight(strongestSemantic.weight);
         const existingClasses = toClassList(element.properties?.className);
 
         element.properties = element.properties || {};
@@ -436,12 +452,12 @@ function annotateElementWithSemanticWeights(element: HastElement, queues: Semant
             `semantic-block-${strongestSemantic.band}`,
         ];
         element.properties['data-semantic-block-band'] = strongestSemantic.band;
-        element.properties['data-semantic-block-weight'] = strongestSemantic.weight.toFixed(3);
+        element.properties['data-semantic-block-weight'] = strongestWeight.toFixed(3);
         element.properties['data-semantic-block-score-label'] = semanticScoreLabel(strongestSemantic);
         element.properties.title = semanticScoreLabel(strongestSemantic);
         element.properties.style = appendStyleDeclaration(
             element.properties.style,
-            styleForSemanticWeight(strongestSemantic.weight),
+            styleForSemanticWeight(strongestWeight),
         );
     }
 

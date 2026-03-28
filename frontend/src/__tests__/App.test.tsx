@@ -117,4 +117,70 @@ describe('App', () => {
         expect(screen.queryByText(/Semantic analysis is unavailable/i)).not.toBeInTheDocument();
         expect(screen.getAllByText(/Second revision/i).length).toBeGreaterThan(0);
     }, 8000);
+
+    it('sanitizes invalid attention payload values instead of crashing sentence view', async () => {
+        vi.stubGlobal('fetch', vi.fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ ready: true, modelName: 'stub', device: 'cpu', error: null }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ([{
+                    index: 0,
+                    sentence: 'Problem sentence.',
+                    normalizedSentence: 'problem sentence.',
+                    weight: null,
+                    band: 'high',
+                }]),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    analysisText: 'Problem sentence. Second sentence.',
+                    tokenCount: 10,
+                    sentenceCount: 2,
+                    sentenceWeights: [
+                        {
+                            index: 0,
+                            sentence: 'Problem sentence.',
+                            normalizedSentence: 'problem sentence.',
+                            weight: null,
+                            band: 'high',
+                        },
+                        {
+                            index: 1,
+                            sentence: 'Second sentence.',
+                            normalizedSentence: 'second sentence.',
+                            weight: 0.7,
+                            band: 'medium',
+                        },
+                    ],
+                    sentenceAttention: [
+                        [1, null],
+                        [null, 1],
+                    ],
+                    warnings: [],
+                }),
+            }));
+
+        render(<App />);
+
+        const textarea = screen.getByPlaceholderText(/Paste markdown here/i);
+        fireEvent.change(textarea, { target: { value: 'Problem sentence. Second sentence.' } });
+
+        await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 900));
+        });
+
+        fireEvent.click(screen.getByRole('tab', { name: /Sentence view/i }));
+
+        await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 400));
+        });
+
+        await waitFor(() => {
+            expect(screen.getByText(/2 sentences · 10 tokens/i)).toBeInTheDocument();
+        }, { timeout: 4000 });
+    }, 8000);
 });

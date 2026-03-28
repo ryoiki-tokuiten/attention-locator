@@ -1,9 +1,17 @@
+from __future__ import annotations
+
 import re
+from pathlib import Path
 
 import nltk
 import torch
 from nltk.tokenize import PunktSentenceTokenizer
 from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
+from transformers.utils import logging as hf_logging
+
+
+hf_logging.disable_progress_bar()
+SMALL_GGUF_STABLE_DTYPE_BYTES = 768 * 1024 * 1024
 
 
 def _resolve_device():
@@ -23,39 +31,184 @@ def _safe_sent_tokenize(text):
     except LookupError:
         return _fallback_sentence_tokenizer.tokenize(text)
 
+
+def _resolve_model_source(model_name):
+    model_path = Path(str(model_name)).expanduser()
+
+    if model_path.is_file() and model_path.suffix == ".gguf":
+        return str(model_path.parent), {"gguf_file": model_path.name}, model_path.name
+
+    if model_path.is_dir():
+        gguf_files = sorted(
+            model_path.glob("*.gguf"),
+            key=lambda path: (
+                0 if "gemma" in path.name.lower() else 1,
+                path.name.lower(),
+            ),
+        )
+        if gguf_files:
+            return str(model_path), {"gguf_file": gguf_files[0].name}, gguf_files[0].name
+
+    return str(model_name), {}, str(model_name)
+
+
+def _filter_tokenizer_kwargs(kwargs):
+    unsupported_keys = {"attn_implementation", "dtype", "torch_dtype", "device_map", "low_cpu_mem_usage"}
+    return {key: value for key, value in kwargs.items() if key not in unsupported_keys}
+
+
+def _resolve_gguf_path(model_source, resolved_kwargs):
+    gguf_file = resolved_kwargs.get("gguf_file")
+    if not gguf_file:
+        return None
+    return Path(model_source) / gguf_file
+
+
+def _default_model_dtype(device, model_source=None, resolved_kwargs=None):
+    resolved_kwargs = resolved_kwargs or {}
+
+    if device == "cuda":
+        gguf_path = _resolve_gguf_path(model_source, resolved_kwargs)
+        if gguf_path and gguf_path.exists() and gguf_path.stat().st_size <= SMALL_GGUF_STABLE_DTYPE_BYTES:
+            # Small quantized GGUF models were producing NaNs in attention extraction under float16.
+            return torch.bfloat16
+        return torch.float16
+
+    if device == "mps":
+        return torch.float16
+
+    return torch.float32
+
+
+def _default_model_runtime_kwargs(device):
+    if device == "cuda":
+        return {
+            "device_map": "auto",
+            "low_cpu_mem_usage": True,
+        }
+    return {}
+
+
+def _model_input_device(model, fallback_device):
+    hf_device_map = getattr(model, "hf_device_map", None)
+    if hf_device_map:
+        for mapped_device in hf_device_map.values():
+            if mapped_device in {"cpu", "disk"}:
+                continue
+            return torch.device(mapped_device)
+        return torch.device("cpu")
+
+    model_device = getattr(model, "device", None)
+    if model_device is not None:
+        return model_device
+
+    return torch.device(fallback_device)
+
+
+def prepare_document_text(text, segment_sentences=True):
+    if segment_sentences:
+        segments = [sentence.strip() for sentence in _safe_sent_tokenize(text) if sentence.strip()]
+    else:
+        segments = [line.strip() for line in text.splitlines() if line.strip()]
+
+    if not segments and text.strip():
+        segments = [text.strip()]
+
+    return "\n".join(segments)
+
+
 class Attention:
     def __init__(self, model_name, **kwargs):
         self.device = _resolve_device()
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, **kwargs)
-        if any(model in model_name.lower() for model in ["gpt", "llama", "gemma"]):
-            self.model = AutoModelForCausalLM.from_pretrained(model_name, output_attentions=True, **kwargs)
-        else:
-            self.model = AutoModel.from_pretrained(model_name, output_attentions=True, **kwargs)
-        self.model.to(self.device)
+        self.model_source, resolved_kwargs, self.model_name = _resolve_model_source(model_name)
+
+        tokenizer_kwargs = _filter_tokenizer_kwargs(kwargs)
+        tokenizer_kwargs.update(resolved_kwargs)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_source, **tokenizer_kwargs)
+
+        model_kwargs = dict(kwargs)
+        model_kwargs.update(resolved_kwargs)
+        model_kwargs.setdefault("attn_implementation", "eager")
+        for key, value in _default_model_runtime_kwargs(self.device).items():
+            model_kwargs.setdefault(key, value)
+        if "dtype" not in model_kwargs and "torch_dtype" not in model_kwargs:
+            model_kwargs["dtype"] = _default_model_dtype(self.device, self.model_source, resolved_kwargs)
+
+        try:
+            self.model = AutoModelForCausalLM.from_pretrained(self.model_source, **model_kwargs)
+            self.model_family = "causal"
+        except Exception:
+            encoder_kwargs = dict(model_kwargs)
+            encoder_kwargs.pop("attn_implementation", None)
+            self.model = AutoModel.from_pretrained(self.model_source, **encoder_kwargs)
+            self.model_family = "encoder"
+
+        if getattr(self.tokenizer, "pad_token", None) is None and getattr(self.tokenizer, "eos_token", None):
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        if "device_map" not in model_kwargs:
+            self.model.to(self.device)
         self.model.eval()
 
-    def get_attention_for_texts(self, text_x: str, text_y: str=None):
-        # text_x = text_x.replace('\n', self.tokenizer.sep_token)
-        # if text_y:
-        #     text_y = text_y.replace('\n', self.tokenizer.sep_token)
-        
-        if hasattr(self.model, 'generate'):
-            input_ids = self.tokenizer(text_x, return_tensors="pt").input_ids.to(self.device)
-            outputs = self.model.generate(input_ids, max_new_tokens=1, output_attentions=True, return_dict_in_generate=True, stopping_criteria=None)
+    def get_attention_for_texts(self, text_x: str, text_y: str = None):
+        if self.model_family == "causal":
+            input_text = prepare_document_text(text_x, segment_sentences=True)
+            input_device = _model_input_device(self.model, self.device)
+            input_ids = self.tokenizer(input_text, return_tensors="pt").input_ids.to(input_device)
+            outputs = self.model.generate(
+                input_ids,
+                max_new_tokens=1,
+                output_attentions=True,
+                return_dict_in_generate=True,
+                stopping_criteria=None,
+            )
             generated_text = self.tokenizer.decode(outputs.sequences[0], skip_special_tokens=True)
             attentions = outputs.attentions
 
             return generated_text, attentions, self.tokenizer, input_ids, outputs
-        else:
-            text_combined = '\n'.join([text_x, text_y])
-            input_ids = self.tokenizer(text_combined, return_tensors="pt").input_ids.to(self.device)
-            outputs = self.model(input_ids, output_attentions=True)
-            attentions_combined = outputs.attentions
 
-            tokens_x = self.tokenizer(text_x, return_tensors="pt").input_ids.to(self.device)
-            x_seq_len = tokens_x.size(1)
+        text_combined = "\n".join(part for part in [text_x, text_y] if part)
+        input_ids = self.tokenizer(text_combined, return_tensors="pt").input_ids.to(self.device)
+        outputs = self.model(input_ids, output_attentions=True)
+        attentions_combined = outputs.attentions
 
-            return x_seq_len, attentions_combined, self.tokenizer, input_ids, outputs
+        tokens_x = self.tokenizer(text_x, return_tensors="pt").input_ids.to(self.device)
+        x_seq_len = tokens_x.size(1)
+
+        return x_seq_len, attentions_combined, self.tokenizer, input_ids, outputs
+
+    def get_attention_for_document(self, text: str, max_input_tokens: int | None = None, segment_sentences: bool = True):
+        prepared_text = prepare_document_text(text, segment_sentences=segment_sentences)
+        if not prepared_text:
+            raise ValueError("No analyzable text was provided.")
+
+        token_ids = self.tokenizer(prepared_text, add_special_tokens=True).input_ids
+        token_count = len(token_ids)
+        if max_input_tokens is not None and token_count > max_input_tokens:
+            raise ValueError(
+                f"Document is {token_count} tokens after sentence preparation, which exceeds the limit of {max_input_tokens}."
+            )
+
+        encoded = self.tokenizer(prepared_text, return_tensors="pt", return_special_tokens_mask=True)
+        input_device = _model_input_device(self.model, self.device)
+        model_inputs = {
+            key: value.to(input_device)
+            for key, value in encoded.items()
+            if key != "special_tokens_mask"
+        }
+
+        forward_kwargs = {"output_attentions": True}
+        if self.model_family == "causal":
+            forward_kwargs["use_cache"] = False
+
+        with torch.no_grad():
+            outputs = self.model(**model_inputs, **forward_kwargs)
+
+        input_ids = model_inputs["input_ids"].detach().cpu()
+        sequences = input_ids[0]
+
+        return prepared_text, token_count, outputs.attentions, self.tokenizer, input_ids, outputs, sequences
+
 
 class ISA:
     def __init__(self, generated_sequences, attentions, tokenizer):

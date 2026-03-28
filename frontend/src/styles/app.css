@@ -279,6 +279,151 @@ textarea {
     padding: 18px 20px 24px;
 }
 
+.preview-tab-bar {
+    display: flex;
+    gap: 10px;
+    padding: 18px 20px 0;
+}
+
+.preview-tab {
+    border: 1px solid rgba(194, 191, 255, 0.12);
+    background: rgba(18, 21, 38, 0.72);
+    color: rgba(244, 245, 251, 0.72);
+    padding: 10px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.preview-tab:hover {
+    transform: translateY(-1px);
+    color: #f4f5fb;
+}
+
+.preview-tab-active {
+    background: rgba(80, 154, 255, 0.18);
+    color: #e7efff;
+    border-color: rgba(80, 154, 255, 0.28);
+}
+
+.attention-explorer-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.attention-empty-state,
+.attention-summary-card,
+.attention-warning-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 16px;
+    border-radius: 18px;
+}
+
+.attention-empty-state,
+.attention-summary-card {
+    border: 1px solid rgba(194, 191, 255, 0.1);
+    background: rgba(14, 17, 31, 0.72);
+}
+
+.attention-warning-card {
+    border: 1px solid rgba(255, 194, 105, 0.14);
+    background: rgba(255, 194, 105, 0.08);
+    color: #ffe5bb;
+}
+
+.attention-empty-state span,
+.attention-summary-card span,
+.attention-warning-card span {
+    color: rgba(244, 245, 251, 0.72);
+    line-height: 1.5;
+}
+
+.attention-warning-card span {
+    color: #ffe5bb;
+}
+
+.attention-matrix-wrapper,
+.token-matrix-wrapper {
+    overflow: auto;
+    border: 1px solid rgba(194, 191, 255, 0.1);
+    border-radius: 18px;
+    background: rgba(10, 13, 24, 0.9);
+}
+
+.attention-matrix,
+.token-matrix {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: max-content;
+}
+
+.attention-matrix th,
+.attention-matrix td,
+.token-matrix th,
+.token-matrix td {
+    border: 1px solid rgba(194, 191, 255, 0.08);
+    padding: 8px;
+    text-align: center;
+    font-size: 12px;
+}
+
+.attention-matrix th,
+.token-matrix th {
+    position: sticky;
+    top: 0;
+    background: rgba(11, 14, 26, 0.96);
+    z-index: 1;
+}
+
+.attention-cell-button {
+    width: 54px;
+    min-height: 44px;
+    border: 0;
+    border-radius: 10px;
+    cursor: pointer;
+    color: #08111d;
+    font-weight: 700;
+}
+
+.attention-cell-button span {
+    display: block;
+    mix-blend-mode: multiply;
+}
+
+.attention-sentence-list {
+    display: grid;
+    gap: 10px;
+}
+
+.attention-sentence-item {
+    display: grid;
+    grid-template-columns: 32px 1fr;
+    gap: 12px;
+    align-items: start;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(194, 191, 255, 0.08);
+    background: rgba(14, 17, 31, 0.58);
+}
+
+.attention-sentence-item strong {
+    color: #ffc269;
+}
+
+.attention-sentence-item span {
+    color: rgba(244, 245, 251, 0.82);
+    line-height: 1.5;
+}
+
+.token-matrix td {
+    min-width: 42px;
+    color: #08111d;
+    font-weight: 700;
+}
+
 .status-banner {
     display: flex;
     flex-direction: column;
@@ -336,5 +481,15 @@ textarea {
 
     .preview-surface {
         padding: 14px;
+    }
+
+    .preview-tab-bar {
+        flex-wrap: wrap;
+        padding: 14px 14px 0;
+    }
+
+    .attention-cell-button {
+        width: 46px;
+        min-height: 38px;
     }
 }

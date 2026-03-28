@@ -52,4 +52,16 @@ describe('renderMathContent', () => {
         expect(html).not.toContain('data-semantic-band');
         expect(html).toContain('code-block-container');
     });
+
+    it('ignores invalid semantic weights instead of crashing', () => {
+        const html = renderMathContent('Semantic focus belongs here.', [{
+            index: 0,
+            sentence: 'Semantic focus belongs here.',
+            normalizedSentence: 'semantic focus belongs here.',
+            weight: null,
+            band: 'high',
+        } as unknown as SemanticWeight]);
+
+        expect(html).toContain('Semantic focus belongs here.');
+    });
 });
