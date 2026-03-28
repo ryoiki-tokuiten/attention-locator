@@ -913,7 +913,7 @@ const App: React.FC = () => {
                                                 onClick={() => setRenderArcMode('manual')}
                                             >
                                                 <GitBranch size={16} />
-                                                Pair select
+                                                <span className="arc-mode-button-label">Pair select</span>
                                             </button>
                                             <button
                                                 type="button"
@@ -921,7 +921,7 @@ const App: React.FC = () => {
                                                 onClick={() => setRenderArcMode('focused')}
                                             >
                                                 <Target size={16} />
-                                                Top-k from sentence
+                                                <span className="arc-mode-button-label">Top-k from sentence</span>
                                             </button>
                                             <button
                                                 type="button"
@@ -929,14 +929,14 @@ const App: React.FC = () => {
                                                 onClick={() => setRenderArcMode('global')}
                                             >
                                                 <Globe size={16} />
-                                                Global top-k
+                                                <span className="arc-mode-button-label">Global top-k</span>
                                             </button>
                                             <button
                                                 type="button"
                                                 className={`arc-mode-button ${renderArcMode === 'off' ? 'arc-mode-button-active arc-mode-button-muted' : 'arc-mode-button-muted'}`}
                                                 onClick={() => setRenderArcMode('off')}
                                             >
-                                                Off
+                                                <span className="arc-mode-button-label">Off</span>
                                             </button>
                                         </div>
 
@@ -973,7 +973,16 @@ const App: React.FC = () => {
                                         ) : null}
 
                                         <div className="arc-toolbar-footer">
-                                            <span className="arc-toolbar-copy">{renderArcHelper}</span>
+                                            <div className="arc-toolbar-copy">
+                                                <span>{renderArcHelper}</span>
+                                                {activeRenderArc ? (
+                                                    <div className="arc-selection-banner" role="status" aria-live="polite">
+                                                        <span className="arc-selection-dot" style={{ backgroundColor: activeRenderArc.color }} />
+                                                        <strong>Selected arc</strong>
+                                                        <span>{activeRenderArc.label}</span>
+                                                    </div>
+                                                ) : null}
+                                            </div>
                                             {(renderArcMode === 'manual' && manualArcSelection.length > 0) || (renderArcMode === 'focused' && focusedArcSentence != null) || activeRenderArc ? (
                                                 <button
                                                     type="button"

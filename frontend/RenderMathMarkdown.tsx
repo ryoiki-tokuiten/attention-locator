@@ -478,11 +478,23 @@ export const RenderMathMarkdown: React.FC<RenderMathMarkdownProps> = ({
                 return {
                     ...connection,
                     d: `M ${sourceX} ${sourceY} C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${targetX} ${targetY}`,
+                    sourceX,
+                    sourceY,
+                    targetX,
+                    targetY,
                     midpointX: midpoint.x,
                     midpointY: midpoint.y,
                 };
             })
-            .filter((connection): connection is AttentionArcConnection & { d: string; midpointX: number; midpointY: number } => Boolean(connection))
+            .filter((connection): connection is AttentionArcConnection & {
+                d: string;
+                sourceX: number;
+                sourceY: number;
+                targetX: number;
+                targetY: number;
+                midpointX: number;
+                midpointY: number;
+            } => Boolean(connection))
             .sort((left, right) => left.score - right.score);
     }, [canvasSize.width, sentenceArcConnections, sentenceLayouts]);
 
@@ -503,6 +515,22 @@ export const RenderMathMarkdown: React.FC<RenderMathMarkdownProps> = ({
                     height={canvasSize.height}
                     aria-label="Sentence attention arc overlay"
                 >
+                    <defs>
+                        {arcPaths.map((connection) => (
+                            <marker
+                                key={`marker-${connection.id}`}
+                                id={`sentence-arc-arrow-${connection.id}`}
+                                viewBox="0 0 10 10"
+                                refX="8.4"
+                                refY="5"
+                                markerWidth="8"
+                                markerHeight="8"
+                                orient="auto-start-reverse"
+                            >
+                                <path d="M 0 0 L 10 5 L 0 10 z" fill={connection.color} opacity="0.96" />
+                            </marker>
+                        ))}
+                    </defs>
                     {arcPaths.map((connection) => {
                         const isActive = connection.id === activeArcId;
                         const labelWidth = Math.max(118, (connection.label.length * 7) + 18);
@@ -524,6 +552,15 @@ export const RenderMathMarkdown: React.FC<RenderMathMarkdownProps> = ({
                             >
                                 <path className="sentence-arc-hit" d={connection.d} />
                                 <path
+                                    className="sentence-arc-aura"
+                                    d={connection.d}
+                                    style={{
+                                        stroke: connection.color,
+                                        opacity: isActive ? 0.26 : 0.1 + (connection.score * 0.12),
+                                        strokeWidth: isActive ? 13 : 8 + (connection.score * 4),
+                                    }}
+                                />
+                                <path
                                     className="sentence-arc-line"
                                     d={connection.d}
                                     style={{
@@ -531,9 +568,31 @@ export const RenderMathMarkdown: React.FC<RenderMathMarkdownProps> = ({
                                         opacity: isActive ? 0.98 : 0.28 + (connection.score * 0.44),
                                         strokeWidth: isActive ? 4.4 : 1.8 + (connection.score * 2.2),
                                     }}
+                                    markerEnd={`url(#sentence-arc-arrow-${connection.id})`}
+                                />
+                                <circle
+                                    className="sentence-arc-endpoint sentence-arc-endpoint-source"
+                                    cx={connection.sourceX}
+                                    cy={connection.sourceY}
+                                    r={3.4}
+                                    style={{ fill: connection.color }}
+                                />
+                                <circle
+                                    className="sentence-arc-endpoint sentence-arc-endpoint-target"
+                                    cx={connection.targetX}
+                                    cy={connection.targetY}
+                                    r={3.4}
+                                    style={{ fill: connection.color }}
                                 />
                                 {isActive ? (
                                     <>
+                                        <circle
+                                            cx={connection.targetX}
+                                            cy={connection.targetY}
+                                            r={6.6}
+                                            className="sentence-arc-endpoint-ring"
+                                            style={{ stroke: connection.color }}
+                                        />
                                         <circle
                                             cx={connection.midpointX}
                                             cy={connection.midpointY}

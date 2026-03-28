@@ -930,18 +930,31 @@ body.light-mode .exec-rendered-image {
     stroke-width: 20;
 }
 
+.sentence-arc-aura {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: blur(10px);
+    transition: opacity 0.2s ease, stroke-width 0.2s ease;
+}
+
 .sentence-arc-line {
     fill: none;
     stroke-linecap: round;
     stroke-linejoin: round;
-    filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.18));
-    transition: opacity 0.18s ease, stroke-width 0.18s ease;
+    filter:
+        drop-shadow(0 10px 18px rgba(0, 0, 0, 0.18))
+        drop-shadow(0 0 10px rgba(255, 255, 255, 0.04));
+    transition: opacity 0.18s ease, stroke-width 0.18s ease, filter 0.18s ease;
 }
 
 .sentence-arc:hover .sentence-arc-line,
 .sentence-arc:focus-visible .sentence-arc-line,
 .sentence-arc-active .sentence-arc-line {
     opacity: 0.96 !important;
+    filter:
+        drop-shadow(0 12px 22px rgba(0, 0, 0, 0.22))
+        drop-shadow(0 0 16px rgba(255, 255, 255, 0.08));
 }
 
 .sentence-arc-focus-dot {
@@ -949,9 +962,22 @@ body.light-mode .exec-rendered-image {
     stroke-width: 2;
 }
 
+.sentence-arc-endpoint {
+    stroke: rgba(6, 10, 18, 0.58);
+    stroke-width: 1.6;
+    opacity: 0.9;
+}
+
+.sentence-arc-endpoint-ring {
+    fill: rgba(0, 0, 0, 0);
+    stroke-width: 2;
+    opacity: 0.88;
+}
+
 .sentence-arc-label rect {
     fill: rgba(8, 11, 20, 0.94);
     stroke: rgba(255, 255, 255, 0.08);
+    filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.24));
 }
 
 .sentence-arc-label text {
