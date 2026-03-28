@@ -222,6 +222,10 @@ function clampTopK(value: number) {
     return Math.max(1, Math.min(15, Math.round(value)));
 }
 
+function clampLongDistanceFactor(value: number, maxFactor: number) {
+    return Math.max(1, Math.min(maxFactor, Math.round(value)));
+}
+
 function arcConnectionId(sourceIndex: number, targetIndex: number) {
     return `${sourceIndex}:${targetIndex}`;
 }
@@ -243,15 +247,39 @@ function buildArcConnection(sourceIndex: number, targetIndex: number, score: num
     };
 }
 
+interface LongDistanceOptions {
+    enabled: boolean;
+    minimumGap: number;
+}
+
+function passesLongDistanceFilter(
+    sourceIndex: number,
+    targetIndex: number,
+    options: LongDistanceOptions,
+) {
+    if (!options.enabled) {
+        return true;
+    }
+
+    return (sourceIndex - targetIndex) > options.minimumGap;
+}
+
 function sortedPastConnections(
     sentenceAttention: number[][],
     sourceIndex: number,
+    longDistanceOptions: LongDistanceOptions,
 ) {
     const row = sentenceAttention[sourceIndex] ?? [];
 
     return row
         .map((score, targetIndex) => buildArcConnection(sourceIndex, targetIndex, score))
-        .filter((connection): connection is AttentionArcConnection => Boolean(connection && connection.targetIndex < sourceIndex))
+        .filter((connection): connection is AttentionArcConnection => (
+            Boolean(
+                connection &&
+                connection.targetIndex < sourceIndex &&
+                passesLongDistanceFilter(connection.sourceIndex, connection.targetIndex, longDistanceOptions),
+            )
+        ))
         .sort((left, right) => (
             right.score - left.score ||
             left.targetIndex - right.targetIndex ||
@@ -259,13 +287,21 @@ function sortedPastConnections(
         ));
 }
 
-function topGlobalConnections(sentenceAttention: number[][], topK: number) {
+function topGlobalConnections(
+    sentenceAttention: number[][],
+    topK: number,
+    longDistanceOptions: LongDistanceOptions,
+) {
     const connections: AttentionArcConnection[] = [];
 
     sentenceAttention.forEach((row, sourceIndex) => {
         row.forEach((score, targetIndex) => {
             const connection = buildArcConnection(sourceIndex, targetIndex, score);
-            if (connection && targetIndex < sourceIndex) {
+            if (
+                connection &&
+                targetIndex < sourceIndex &&
+                passesLongDistanceFilter(connection.sourceIndex, connection.targetIndex, longDistanceOptions)
+            ) {
                 connections.push(connection);
             }
         });
@@ -317,6 +353,10 @@ const App: React.FC = () => {
     const [focusedArcSentence, setFocusedArcSentence] = useState<number | null>(null);
     const [focusedArcTopK, setFocusedArcTopK] = useState(5);
     const [globalArcTopK, setGlobalArcTopK] = useState(5);
+    const [focusedLongDistanceEnabled, setFocusedLongDistanceEnabled] = useState(false);
+    const [globalLongDistanceEnabled, setGlobalLongDistanceEnabled] = useState(false);
+    const [focusedLongDistanceFactor, setFocusedLongDistanceFactor] = useState(5);
+    const [globalLongDistanceFactor, setGlobalLongDistanceFactor] = useState(5);
     const [selectedArcId, setSelectedArcId] = useState<string | null>(null);
     const deferredContent = useDeferredValue(content);
     const latestRequestRef = useRef(0);
@@ -389,6 +429,19 @@ const App: React.FC = () => {
             setFocusedArcSentence(null);
         }
     }, [renderArcMode]);
+
+    const maxLongDistanceFactor = useMemo(() => {
+        if (!documentAttention) {
+            return 5;
+        }
+
+        return Math.max(1, documentAttention.sentenceCount - 1);
+    }, [documentAttention]);
+
+    useEffect(() => {
+        setFocusedLongDistanceFactor((currentValue) => clampLongDistanceFactor(currentValue, maxLongDistanceFactor));
+        setGlobalLongDistanceFactor((currentValue) => clampLongDistanceFactor(currentValue, maxLongDistanceFactor));
+    }, [maxLongDistanceFactor]);
 
     useEffect(() => {
         if (!deferredContent.trim()) {
@@ -616,6 +669,16 @@ const App: React.FC = () => {
         isLoadingPairAttention,
     );
 
+    const focusedLongDistanceOptions = useMemo<LongDistanceOptions>(() => ({
+        enabled: focusedLongDistanceEnabled,
+        minimumGap: clampLongDistanceFactor(focusedLongDistanceFactor, maxLongDistanceFactor),
+    }), [focusedLongDistanceEnabled, focusedLongDistanceFactor, maxLongDistanceFactor]);
+
+    const globalLongDistanceOptions = useMemo<LongDistanceOptions>(() => ({
+        enabled: globalLongDistanceEnabled,
+        minimumGap: clampLongDistanceFactor(globalLongDistanceFactor, maxLongDistanceFactor),
+    }), [globalLongDistanceEnabled, globalLongDistanceFactor, maxLongDistanceFactor]);
+
     const renderArcConnections = useMemo(() => {
         if (!documentAttention || renderArcMode === 'off') {
             return [];
@@ -642,15 +705,25 @@ const App: React.FC = () => {
                 return [];
             }
 
-            return sortedPastConnections(documentAttention.sentenceAttention, focusedArcSentence)
+            return sortedPastConnections(
+                documentAttention.sentenceAttention,
+                focusedArcSentence,
+                focusedLongDistanceOptions,
+            )
                 .slice(0, clampTopK(focusedArcTopK));
         }
 
-        return topGlobalConnections(documentAttention.sentenceAttention, globalArcTopK);
+        return topGlobalConnections(
+            documentAttention.sentenceAttention,
+            globalArcTopK,
+            globalLongDistanceOptions,
+        );
     }, [
         documentAttention,
         focusedArcSentence,
+        focusedLongDistanceOptions,
         focusedArcTopK,
+        globalLongDistanceOptions,
         globalArcTopK,
         manualArcSelection,
         renderArcMode,
@@ -711,13 +784,26 @@ const App: React.FC = () => {
                 return 'Click a later sentence to reveal its strongest past citations.';
             }
             if (!renderArcConnections.length) {
+                if (focusedLongDistanceOptions.enabled) {
+                    return `Sentence ${focusedArcSentence} has no citations beyond a ${focusedLongDistanceOptions.minimumGap}-sentence gap.`;
+                }
                 return `Sentence ${focusedArcSentence} has no earlier citations to draw yet.`;
             }
-            return `Showing the top ${clampTopK(focusedArcTopK)} past citations for sentence ${focusedArcSentence}.`;
+            if (focusedLongDistanceOptions.enabled) {
+                return `Showing the top ${renderArcConnections.length} long-distance citations for sentence ${focusedArcSentence}, excluding gaps of ${focusedLongDistanceOptions.minimumGap} sentences or less.`;
+            }
+            return `Showing the top ${renderArcConnections.length} past citations for sentence ${focusedArcSentence}.`;
         }
 
         if (!renderArcConnections.length) {
+            if (globalLongDistanceOptions.enabled) {
+                return `No global citations remain beyond a ${globalLongDistanceOptions.minimumGap}-sentence gap.`;
+            }
             return 'No global later-to-earlier citation arcs are available for this document yet.';
+        }
+
+        if (globalLongDistanceOptions.enabled) {
+            return `Showing the strongest ${renderArcConnections.length} long-distance citation arcs, excluding gaps of ${globalLongDistanceOptions.minimumGap} sentences or less.`;
         }
 
         return `Showing the strongest ${renderArcConnections.length} later-to-earlier citation arcs in the document.`;
@@ -725,7 +811,9 @@ const App: React.FC = () => {
         attentionError,
         documentAttention,
         focusedArcSentence,
+        focusedLongDistanceOptions,
         focusedArcTopK,
+        globalLongDistanceOptions,
         isLoadingDocumentAttention,
         manualArcSelection,
         renderArcConnections,
@@ -756,6 +844,14 @@ const App: React.FC = () => {
             ));
         }
     };
+
+    const currentArcTopK = renderArcMode === 'focused' ? clampTopK(focusedArcTopK) : clampTopK(globalArcTopK);
+    const isCurrentLongDistanceEnabled = renderArcMode === 'focused'
+        ? focusedLongDistanceEnabled
+        : globalLongDistanceEnabled;
+    const currentLongDistanceFactor = renderArcMode === 'focused'
+        ? focusedLongDistanceOptions.minimumGap
+        : globalLongDistanceOptions.minimumGap;
 
     return (
         <div className="app-shell">
@@ -941,35 +1037,87 @@ const App: React.FC = () => {
                                         </div>
 
                                         {renderArcMode === 'focused' || renderArcMode === 'global' ? (
-                                            <label className="arc-slider-card">
-                                                <div className="arc-slider-heading">
-                                                    <span>
-                                                        <SlidersHorizontal size={15} />
-                                                        {renderArcMode === 'focused' ? 'Top-k past citations' : 'Top-k global arcs'}
-                                                    </span>
-                                                    <strong>{renderArcMode === 'focused' ? clampTopK(focusedArcTopK) : clampTopK(globalArcTopK)}</strong>
-                                                </div>
-                                                <input
-                                                    className="arc-slider"
-                                                    type="range"
-                                                    min={1}
-                                                    max={15}
-                                                    step={1}
-                                                    value={renderArcMode === 'focused' ? focusedArcTopK : globalArcTopK}
-                                                    onChange={(event) => {
-                                                        const nextValue = clampTopK(Number(event.target.value));
-                                                        if (renderArcMode === 'focused') {
-                                                            setFocusedArcTopK(nextValue);
-                                                            return;
-                                                        }
-                                                        setGlobalArcTopK(nextValue);
-                                                    }}
-                                                />
-                                                <div className="arc-slider-scale" aria-hidden="true">
-                                                    <span>1</span>
-                                                    <span>15</span>
-                                                </div>
-                                            </label>
+                                            <>
+                                                <label className="arc-slider-card">
+                                                    <div className="arc-slider-heading">
+                                                        <span>
+                                                            <SlidersHorizontal size={15} />
+                                                            {renderArcMode === 'focused' ? 'Top-k past citations' : 'Top-k global arcs'}
+                                                        </span>
+                                                        <strong>{currentArcTopK}</strong>
+                                                    </div>
+                                                    <input
+                                                        className="arc-slider"
+                                                        type="range"
+                                                        min={1}
+                                                        max={15}
+                                                        step={1}
+                                                        value={currentArcTopK}
+                                                        onChange={(event) => {
+                                                            const nextValue = clampTopK(Number(event.target.value));
+                                                            if (renderArcMode === 'focused') {
+                                                                setFocusedArcTopK(nextValue);
+                                                                return;
+                                                            }
+                                                            setGlobalArcTopK(nextValue);
+                                                        }}
+                                                    />
+                                                    <div className="arc-slider-scale" aria-hidden="true">
+                                                        <span>1</span>
+                                                        <span>15</span>
+                                                    </div>
+                                                </label>
+
+                                                <section className="arc-filter-card" aria-label="Long distance relationship filter">
+                                                    <div className="arc-filter-toggle">
+                                                        <div className="arc-filter-copy">
+                                                            <strong>Long distance relationship factor</strong>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            role="switch"
+                                                            aria-checked={isCurrentLongDistanceEnabled}
+                                                            className={`arc-filter-switch ${isCurrentLongDistanceEnabled ? 'arc-filter-switch-active' : ''}`}
+                                                            onClick={() => {
+                                                                if (renderArcMode === 'focused') {
+                                                                    setFocusedLongDistanceEnabled((currentValue) => !currentValue);
+                                                                    return;
+                                                                }
+                                                                setGlobalLongDistanceEnabled((currentValue) => !currentValue);
+                                                            }}
+                                                        >
+                                                            <span className="arc-filter-switch-thumb" />
+                                                        </button>
+                                                    </div>
+
+                                                    <label className={`arc-filter-slider-wrap ${isCurrentLongDistanceEnabled ? '' : 'arc-filter-slider-wrap-disabled'}`}>
+                                                        <div className="arc-slider-heading">
+                                                            <strong>{currentLongDistanceFactor}</strong>
+                                                        </div>
+                                                        <input
+                                                            className="arc-slider"
+                                                            type="range"
+                                                            min={1}
+                                                            max={maxLongDistanceFactor}
+                                                            step={1}
+                                                            disabled={!isCurrentLongDistanceEnabled}
+                                                            value={currentLongDistanceFactor}
+                                                            onChange={(event) => {
+                                                                const nextValue = clampLongDistanceFactor(Number(event.target.value), maxLongDistanceFactor);
+                                                                if (renderArcMode === 'focused') {
+                                                                    setFocusedLongDistanceFactor(nextValue);
+                                                                    return;
+                                                                }
+                                                                setGlobalLongDistanceFactor(nextValue);
+                                                            }}
+                                                        />
+                                                        <div className="arc-slider-scale" aria-hidden="true">
+                                                            <span>1</span>
+                                                            <span>{maxLongDistanceFactor}</span>
+                                                        </div>
+                                                    </label>
+                                                </section>
+                                            </>
                                         ) : null}
 
                                         <div className="arc-toolbar-footer">

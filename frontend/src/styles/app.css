@@ -622,6 +622,83 @@ textarea {
     background: rgba(10, 14, 26, 0.52);
 }
 
+.arc-filter-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(194, 191, 255, 0.08);
+    background: rgba(10, 14, 26, 0.52);
+}
+
+.arc-filter-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.arc-filter-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.arc-filter-copy strong {
+    color: #f4f5fb;
+    font-size: 0.95rem;
+}
+
+.arc-filter-copy span {
+    color: rgba(244, 245, 251, 0.62);
+    line-height: 1.45;
+}
+
+.arc-filter-switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 56px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid rgba(194, 191, 255, 0.14);
+    border-radius: 999px;
+    background: rgba(15, 20, 35, 0.72);
+    cursor: pointer;
+    transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.arc-filter-switch-active {
+    background: rgba(80, 154, 255, 0.26);
+    border-color: rgba(80, 154, 255, 0.34);
+}
+
+.arc-filter-switch-thumb {
+    position: absolute;
+    top: 3px;
+    left: 4px;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: #f4f5fb;
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.24);
+    transition: transform 0.18s ease;
+}
+
+.arc-filter-switch-active .arc-filter-switch-thumb {
+    transform: translateX(24px);
+}
+
+.arc-filter-slider-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.arc-filter-slider-wrap-disabled {
+    opacity: 0.48;
+}
+
 .arc-slider-heading {
     display: flex;
     align-items: center;
