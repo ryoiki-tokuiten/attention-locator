@@ -1,8 +1,8 @@
 import React, { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { FileText, LoaderCircle, PanelLeftClose, PanelLeftOpen, SwatchBook } from 'lucide-react';
+import { FileText, GitBranch, Globe, LoaderCircle, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, SwatchBook, Target } from 'lucide-react';
 
-import { GlobalImagePreviewModal, RenderMathMarkdown } from '../RenderMathMarkdown';
-import AttentionExplorer, { type AttentionTab } from './AttentionExplorer';
+import { GlobalImagePreviewModal, RenderMathMarkdown, type AttentionArcConnection } from '../RenderMathMarkdown';
+import AttentionExplorer, { attentionColorForWeight, type AttentionTab } from './AttentionExplorer';
 import type {
     DocumentAttentionPayload,
     HealthPayload,
@@ -32,6 +32,8 @@ const VIEW_TABS: Array<{ id: AttentionTab; label: string }> = [
     { id: 'sentence', label: 'Sentence view' },
     { id: 'token', label: 'Token view' },
 ];
+
+type RenderArcMode = 'off' | 'manual' | 'focused' | 'global';
 
 function clamp(value: number, min = 0, max = 1) {
     return Math.min(max, Math.max(min, value));
@@ -122,13 +124,9 @@ function sanitizeSentencePairAttentionPayload(payload: unknown): SentencePairAtt
     };
 }
 
-function sentenceCount(content: string) {
-    const matches = content.match(/[.!?](?=\s|$)/g);
-    return matches ? matches.length : 0;
-}
-
 function previewPillLabel(
     activeTab: AttentionTab,
+    renderArcMode: RenderArcMode,
     semanticWeights: SemanticWeight[],
     documentAttention: DocumentAttentionPayload | null,
     pairAttention: SentencePairAttentionPayload | null,
@@ -138,6 +136,15 @@ function previewPillLabel(
     isLoadingPairAttention: boolean,
 ) {
     if (activeTab === 'rendered') {
+        if (renderArcMode !== 'off') {
+            if (attentionError && !documentAttention) {
+                return 'Arc overlay unavailable';
+            }
+            if (isLoadingDocumentAttention) {
+                return 'Building sentence arcs';
+            }
+            return documentAttention ? `Arc graph ready · ${documentAttention.sentenceCount} sentences` : 'Arc overlay ready on demand';
+        }
         return analysisError ? 'Backend unavailable, rendering without weights' : `${semanticWeights.length} sentence weights loaded`;
     }
 
@@ -166,6 +173,7 @@ function previewActivityState(
     isAnalyzing: boolean,
     isLoadingDocumentAttention: boolean,
     isLoadingPairAttention: boolean,
+    renderArcMode: RenderArcMode,
 ) {
     if (isInputPending) {
         return {
@@ -180,6 +188,14 @@ function previewActivityState(
             kicker: 'Semantic refresh',
             title: 'Recomputing sentence emphasis',
             description: 'We are refreshing the rendered pill intensities so the preview reflects the latest wording.',
+        };
+    }
+
+    if (activeTab === 'rendered' && renderArcMode !== 'off' && isLoadingDocumentAttention) {
+        return {
+            kicker: 'Arc overlay',
+            title: 'Building sentence-to-sentence citations',
+            description: 'The full-document sentence graph is loading so the rendered preview can draw later-to-earlier arcs.',
         };
     }
 
@@ -200,6 +216,68 @@ function previewActivityState(
     }
 
     return null;
+}
+
+function clampTopK(value: number) {
+    return Math.max(1, Math.min(15, Math.round(value)));
+}
+
+function arcConnectionId(sourceIndex: number, targetIndex: number) {
+    return `${sourceIndex}:${targetIndex}`;
+}
+
+function buildArcConnection(sourceIndex: number, targetIndex: number, score: number): AttentionArcConnection | null {
+    const normalizedScore = clamp(asFiniteNumber(score, 0));
+
+    if (sourceIndex === targetIndex || normalizedScore <= 0) {
+        return null;
+    }
+
+    return {
+        id: arcConnectionId(sourceIndex, targetIndex),
+        sourceIndex,
+        targetIndex,
+        score: normalizedScore,
+        color: attentionColorForWeight(normalizedScore),
+        label: `${sourceIndex} -> ${targetIndex} · ${normalizedScore.toFixed(3)}`,
+    };
+}
+
+function sortedPastConnections(
+    sentenceAttention: number[][],
+    sourceIndex: number,
+) {
+    const row = sentenceAttention[sourceIndex] ?? [];
+
+    return row
+        .map((score, targetIndex) => buildArcConnection(sourceIndex, targetIndex, score))
+        .filter((connection): connection is AttentionArcConnection => Boolean(connection && connection.targetIndex < sourceIndex))
+        .sort((left, right) => (
+            right.score - left.score ||
+            left.targetIndex - right.targetIndex ||
+            left.sourceIndex - right.sourceIndex
+        ));
+}
+
+function topGlobalConnections(sentenceAttention: number[][], topK: number) {
+    const connections: AttentionArcConnection[] = [];
+
+    sentenceAttention.forEach((row, sourceIndex) => {
+        row.forEach((score, targetIndex) => {
+            const connection = buildArcConnection(sourceIndex, targetIndex, score);
+            if (connection && targetIndex < sourceIndex) {
+                connections.push(connection);
+            }
+        });
+    });
+
+    return connections
+        .sort((left, right) => (
+            right.score - left.score ||
+            left.sourceIndex - right.sourceIndex ||
+            left.targetIndex - right.targetIndex
+        ))
+        .slice(0, clampTopK(topK));
 }
 
 const ATTENTION_LEGEND_ITEMS = [
@@ -234,6 +312,12 @@ const App: React.FC = () => {
     const [isLoadingDocumentAttention, setIsLoadingDocumentAttention] = useState(false);
     const [isLoadingPairAttention, setIsLoadingPairAttention] = useState(false);
     const [selectedPair, setSelectedPair] = useState<{ sentenceXIndex: number; sentenceYIndex: number } | null>(null);
+    const [renderArcMode, setRenderArcMode] = useState<RenderArcMode>('off');
+    const [manualArcSelection, setManualArcSelection] = useState<number[]>([]);
+    const [focusedArcSentence, setFocusedArcSentence] = useState<number | null>(null);
+    const [focusedArcTopK, setFocusedArcTopK] = useState(5);
+    const [globalArcTopK, setGlobalArcTopK] = useState(5);
+    const [selectedArcId, setSelectedArcId] = useState<string | null>(null);
     const deferredContent = useDeferredValue(content);
     const latestRequestRef = useRef(0);
     const latestDocumentRequestRef = useRef(0);
@@ -279,8 +363,32 @@ const App: React.FC = () => {
             setPairAttention(null);
             setAttentionError(null);
             setSelectedPair(null);
+            setManualArcSelection([]);
+            setFocusedArcSentence(null);
+            setSelectedArcId(null);
         });
     }, [deferredContent]);
+
+    useEffect(() => {
+        setSelectedArcId(null);
+
+        if (renderArcMode === 'off') {
+            setManualArcSelection([]);
+            setFocusedArcSentence(null);
+            return;
+        }
+
+        if (renderArcMode === 'manual') {
+            setFocusedArcSentence(null);
+            return;
+        }
+
+        setManualArcSelection([]);
+
+        if (renderArcMode === 'global') {
+            setFocusedArcSentence(null);
+        }
+    }, [renderArcMode]);
 
     useEffect(() => {
         if (!deferredContent.trim()) {
@@ -346,8 +454,10 @@ const App: React.FC = () => {
         };
     }, [deferredContent]);
 
+    const shouldLoadDocumentAttention = Boolean(deferredContent.trim()) && (activeTab !== 'rendered' || renderArcMode !== 'off');
+
     useEffect(() => {
-        if (activeTab === 'rendered' || !deferredContent.trim()) {
+        if (!shouldLoadDocumentAttention) {
             setIsLoadingDocumentAttention(false);
             return;
         }
@@ -404,7 +514,7 @@ const App: React.FC = () => {
             controller.abort();
             window.clearTimeout(timeoutId);
         };
-    }, [activeTab, deferredContent]);
+    }, [activeTab, deferredContent, renderArcMode, shouldLoadDocumentAttention]);
 
     useEffect(() => {
         if (activeTab !== 'token' || !selectedPair || !deferredContent.trim()) {
@@ -472,11 +582,9 @@ const App: React.FC = () => {
 
     const stats = useMemo(() => {
         const words = content.trim() ? content.trim().split(/\s+/).length : 0;
-        const sentences = sentenceCount(content);
-        const highlighted = semanticWeights.filter((weight) => weight.band !== 'low').length;
 
-        return { words, sentences, highlighted };
-    }, [content, semanticWeights]);
+        return { words };
+    }, [content]);
 
     const isInputPending = content !== deferredContent;
     const previewActivity = previewActivityState(
@@ -485,6 +593,7 @@ const App: React.FC = () => {
         isAnalyzing,
         isLoadingDocumentAttention,
         isLoadingPairAttention,
+        renderArcMode,
     );
 
     const handleSelectPair = ({ sentenceXIndex, sentenceYIndex }: { sentenceXIndex: number; sentenceYIndex: number }) => {
@@ -497,6 +606,7 @@ const App: React.FC = () => {
 
     const currentPreviewPillLabel = previewPillLabel(
         activeTab,
+        renderArcMode,
         semanticWeights,
         documentAttention,
         pairAttention,
@@ -505,6 +615,147 @@ const App: React.FC = () => {
         isLoadingDocumentAttention,
         isLoadingPairAttention,
     );
+
+    const renderArcConnections = useMemo(() => {
+        if (!documentAttention || renderArcMode === 'off') {
+            return [];
+        }
+
+        if (renderArcMode === 'manual') {
+            if (manualArcSelection.length < 2) {
+                return [];
+            }
+
+            const sourceIndex = Math.max(...manualArcSelection);
+            const targetIndex = Math.min(...manualArcSelection);
+            const connection = buildArcConnection(
+                sourceIndex,
+                targetIndex,
+                documentAttention.sentenceAttention[sourceIndex]?.[targetIndex],
+            );
+
+            return connection ? [connection] : [];
+        }
+
+        if (renderArcMode === 'focused') {
+            if (focusedArcSentence == null) {
+                return [];
+            }
+
+            return sortedPastConnections(documentAttention.sentenceAttention, focusedArcSentence)
+                .slice(0, clampTopK(focusedArcTopK));
+        }
+
+        return topGlobalConnections(documentAttention.sentenceAttention, globalArcTopK);
+    }, [
+        documentAttention,
+        focusedArcSentence,
+        focusedArcTopK,
+        globalArcTopK,
+        manualArcSelection,
+        renderArcMode,
+    ]);
+
+    const activeRenderArc = useMemo(() => (
+        renderArcConnections.find((connection) => connection.id === selectedArcId) ?? null
+    ), [renderArcConnections, selectedArcId]);
+
+    const renderArcSelectedSentences = useMemo(() => {
+        const selected = new Set<number>();
+
+        if (renderArcMode === 'manual') {
+            manualArcSelection.forEach((sentenceIndex) => selected.add(sentenceIndex));
+        }
+
+        if (renderArcMode === 'focused' && focusedArcSentence != null) {
+            selected.add(focusedArcSentence);
+        }
+
+        if (activeRenderArc) {
+            selected.add(activeRenderArc.sourceIndex);
+            selected.add(activeRenderArc.targetIndex);
+        }
+
+        return [...selected];
+    }, [activeRenderArc, focusedArcSentence, manualArcSelection, renderArcMode]);
+
+    const renderArcHelper = useMemo(() => {
+        if (renderArcMode === 'off') {
+            return 'Turn on arcs to trace how later sentences cite earlier ones inside the rendered preview.';
+        }
+
+        if (attentionError && !documentAttention) {
+            return attentionError;
+        }
+
+        if (isLoadingDocumentAttention && !documentAttention) {
+            return 'Loading the full-document sentence graph for arc overlays...';
+        }
+
+        if (!documentAttention) {
+            return 'Arc overlays will appear once the document sentence graph is ready.';
+        }
+
+        if (renderArcMode === 'manual') {
+            if (!manualArcSelection.length) {
+                return 'Click two different sentences. We will draw one later-to-earlier citation arc between them.';
+            }
+            if (manualArcSelection.length === 1) {
+                return `Sentence ${manualArcSelection[0]} selected. Choose one more sentence to complete the arc.`;
+            }
+            return 'Two sentences selected. Click the arc itself if you want to reveal its score.';
+        }
+
+        if (renderArcMode === 'focused') {
+            if (focusedArcSentence == null) {
+                return 'Click a later sentence to reveal its strongest past citations.';
+            }
+            if (!renderArcConnections.length) {
+                return `Sentence ${focusedArcSentence} has no earlier citations to draw yet.`;
+            }
+            return `Showing the top ${clampTopK(focusedArcTopK)} past citations for sentence ${focusedArcSentence}.`;
+        }
+
+        if (!renderArcConnections.length) {
+            return 'No global later-to-earlier citation arcs are available for this document yet.';
+        }
+
+        return `Showing the strongest ${renderArcConnections.length} later-to-earlier citation arcs in the document.`;
+    }, [
+        attentionError,
+        documentAttention,
+        focusedArcSentence,
+        focusedArcTopK,
+        isLoadingDocumentAttention,
+        manualArcSelection,
+        renderArcConnections,
+        renderArcMode,
+    ]);
+
+    const handleRenderedSentenceClick = (sentenceIndex: number) => {
+        if (renderArcMode === 'manual') {
+            setSelectedArcId(null);
+            setManualArcSelection((currentSelection) => {
+                if (currentSelection.includes(sentenceIndex)) {
+                    return currentSelection.filter((index) => index !== sentenceIndex);
+                }
+
+                if (currentSelection.length >= 2) {
+                    return [currentSelection[currentSelection.length - 1], sentenceIndex];
+                }
+
+                return [...currentSelection, sentenceIndex];
+            });
+            return;
+        }
+
+        if (renderArcMode === 'focused') {
+            setSelectedArcId(null);
+            setFocusedArcSentence((currentSentence) => (
+                currentSentence === sentenceIndex ? null : sentenceIndex
+            ));
+        }
+    };
 
     return (
         <div className="app-shell">
@@ -645,7 +896,111 @@ const App: React.FC = () => {
 
                         <div className="preview-surface">
                             {activeTab === 'rendered' ? (
-                                <RenderMathMarkdown content={content} semanticWeights={semanticWeights} />
+                                <div className="rendered-preview-stack">
+                                    <section className="arc-toolbar" aria-label="Sentence arc controls">
+                                        <div className="arc-toolbar-header">
+                                            <div>
+                                                <p className="panel-label">Arc overlay</p>
+                                                <h3>Later-to-earlier sentence citations</h3>
+                                            </div>
+                                            <GitBranch size={18} />
+                                        </div>
+
+                                        <div className="arc-mode-group" role="group" aria-label="Arc overlay modes">
+                                            <button
+                                                type="button"
+                                                className={`arc-mode-button ${renderArcMode === 'manual' ? 'arc-mode-button-active' : ''}`}
+                                                onClick={() => setRenderArcMode('manual')}
+                                            >
+                                                <GitBranch size={16} />
+                                                Pair select
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`arc-mode-button ${renderArcMode === 'focused' ? 'arc-mode-button-active' : ''}`}
+                                                onClick={() => setRenderArcMode('focused')}
+                                            >
+                                                <Target size={16} />
+                                                Top-k from sentence
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`arc-mode-button ${renderArcMode === 'global' ? 'arc-mode-button-active' : ''}`}
+                                                onClick={() => setRenderArcMode('global')}
+                                            >
+                                                <Globe size={16} />
+                                                Global top-k
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`arc-mode-button ${renderArcMode === 'off' ? 'arc-mode-button-active arc-mode-button-muted' : 'arc-mode-button-muted'}`}
+                                                onClick={() => setRenderArcMode('off')}
+                                            >
+                                                Off
+                                            </button>
+                                        </div>
+
+                                        {renderArcMode === 'focused' || renderArcMode === 'global' ? (
+                                            <label className="arc-slider-card">
+                                                <div className="arc-slider-heading">
+                                                    <span>
+                                                        <SlidersHorizontal size={15} />
+                                                        {renderArcMode === 'focused' ? 'Top-k past citations' : 'Top-k global arcs'}
+                                                    </span>
+                                                    <strong>{renderArcMode === 'focused' ? clampTopK(focusedArcTopK) : clampTopK(globalArcTopK)}</strong>
+                                                </div>
+                                                <input
+                                                    className="arc-slider"
+                                                    type="range"
+                                                    min={1}
+                                                    max={15}
+                                                    step={1}
+                                                    value={renderArcMode === 'focused' ? focusedArcTopK : globalArcTopK}
+                                                    onChange={(event) => {
+                                                        const nextValue = clampTopK(Number(event.target.value));
+                                                        if (renderArcMode === 'focused') {
+                                                            setFocusedArcTopK(nextValue);
+                                                            return;
+                                                        }
+                                                        setGlobalArcTopK(nextValue);
+                                                    }}
+                                                />
+                                                <div className="arc-slider-scale" aria-hidden="true">
+                                                    <span>1</span>
+                                                    <span>15</span>
+                                                </div>
+                                            </label>
+                                        ) : null}
+
+                                        <div className="arc-toolbar-footer">
+                                            <span className="arc-toolbar-copy">{renderArcHelper}</span>
+                                            {(renderArcMode === 'manual' && manualArcSelection.length > 0) || (renderArcMode === 'focused' && focusedArcSentence != null) || activeRenderArc ? (
+                                                <button
+                                                    type="button"
+                                                    className="arc-clear-button"
+                                                    onClick={() => {
+                                                        setManualArcSelection([]);
+                                                        setFocusedArcSentence(null);
+                                                        setSelectedArcId(null);
+                                                    }}
+                                                >
+                                                    Clear selection
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                    </section>
+
+                                    <RenderMathMarkdown
+                                        content={content}
+                                        semanticWeights={semanticWeights}
+                                        sentenceArcConnections={renderArcConnections}
+                                        selectedSentenceIndices={renderArcSelectedSentences}
+                                        activeArcId={selectedArcId}
+                                        isSentenceSelectionEnabled={renderArcMode === 'manual' || renderArcMode === 'focused'}
+                                        onSentenceClick={(renderArcMode === 'manual' || renderArcMode === 'focused') ? handleRenderedSentenceClick : undefined}
+                                        onArcClick={(arcId) => setSelectedArcId((currentId) => currentId === arcId ? null : arcId)}
+                                    />
+                                </div>
                             ) : (
                                 <AttentionExplorer
                                     activeTab={activeTab}

@@ -900,6 +900,68 @@ body.light-mode .exec-rendered-image {
 }
 
 /* ========================================================================== */
+/* === RENDER OVERLAY ======================================================= */
+/* ========================================================================== */
+
+.render-math-markdown-shell {
+    position: relative;
+}
+
+.render-math-markdown-arcs {
+    position: absolute;
+    inset: 0;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 6;
+}
+
+.sentence-arc {
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.sentence-arc:focus-visible {
+    outline: none;
+}
+
+.sentence-arc-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 20;
+}
+
+.sentence-arc-line {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.18));
+    transition: opacity 0.18s ease, stroke-width 0.18s ease;
+}
+
+.sentence-arc:hover .sentence-arc-line,
+.sentence-arc:focus-visible .sentence-arc-line,
+.sentence-arc-active .sentence-arc-line {
+    opacity: 0.96 !important;
+}
+
+.sentence-arc-focus-dot {
+    stroke: rgba(6, 10, 18, 0.78);
+    stroke-width: 2;
+}
+
+.sentence-arc-label rect {
+    fill: rgba(8, 11, 20, 0.94);
+    stroke: rgba(255, 255, 255, 0.08);
+}
+
+.sentence-arc-label text {
+    fill: #f5f3ff;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+}
+
+/* ========================================================================== */
 /* === SEMANTIC ATTENTION =================================================== */
 /* ========================================================================== */
 
@@ -972,6 +1034,32 @@ body.light-mode .exec-rendered-image {
 .semantic-sentence:hover,
 .semantic-sentence:focus-visible {
     filter: brightness(1.05) saturate(1.04);
+}
+
+.semantic-sentence[data-arc-selectable="true"] {
+    cursor: pointer;
+}
+
+.semantic-sentence[data-arc-connected="true"] {
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 16px 30px -22px rgba(var(--semantic-primary-rgb), calc(var(--semantic-glow-opacity) * 1.32));
+}
+
+.semantic-sentence[data-arc-selected="true"] {
+    border-color: rgba(var(--semantic-primary-rgb), 0.62);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 0 0 1px rgba(var(--semantic-primary-rgb), 0.22),
+        0 22px 34px -24px rgba(var(--semantic-secondary-rgb), 0.32);
+}
+
+.semantic-sentence[data-arc-endpoint="source"] {
+    transform: translateY(-1px);
+}
+
+.semantic-sentence[data-arc-endpoint="target"] {
+    filter: brightness(1.06);
 }
 
 .semantic-sentence::after {

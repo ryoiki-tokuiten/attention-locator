@@ -28,7 +28,7 @@ function asFiniteNumber(value: unknown, fallback = 0) {
     return Number.isFinite(numeric) ? numeric : fallback;
 }
 
-function interpolateColor(weight: number): string {
+export function attentionColorForWeight(weight: number): string {
     const normalized = clamp(asFiniteNumber(weight));
 
     const stops = [
@@ -127,7 +127,7 @@ const SentenceAttentionView: React.FC<{
                                             type="button"
                                             className="attention-cell-button"
                                             style={{
-                                                backgroundColor: interpolateColor(normalizedValue),
+                                                backgroundColor: attentionColorForWeight(normalizedValue),
                                                 opacity: 0.24 + (normalizedValue * 0.76),
                                             }}
                                             title={`Sentence ${columnIndex} -> sentence ${rowIndex}: ${normalizedValue.toFixed(3)}`}
@@ -209,7 +209,7 @@ const TokenAttentionView: React.FC<{
                                         <td
                                         key={`token-cell-${rowIndex}-${columnIndex}`}
                                         style={{
-                                            backgroundColor: interpolateColor(normalizedValue),
+                                            backgroundColor: attentionColorForWeight(normalizedValue),
                                             opacity: 0.22 + (normalizedValue * 0.78),
                                         }}
                                         title={`${pairAttention.columnTokens[columnIndex]} -> ${pairAttention.rowTokens[rowIndex]}: ${normalizedValue.toFixed(4)}`}
