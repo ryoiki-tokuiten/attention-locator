@@ -177,6 +177,40 @@ def assign_score_bands(weights: Sequence[float]) -> list[str]:
     return bands
 
 
+def compute_opportunity_corrected_sentence_scores(
+    sentence_attention: Any,
+    sentence_boundaries_ids: Sequence[int],
+    torch_module: Any,
+) -> list[float]:
+    sentence_count = int(getattr(sentence_attention, "shape", [0])[0] or 0)
+    if sentence_count <= 1:
+        return [0.0 for _ in range(sentence_count)]
+
+    incoming_scores = torch_module.nan_to_num(
+        sentence_attention.sum(dim=0) - torch_module.diag(sentence_attention),
+        nan=0.0,
+        posinf=0.0,
+        neginf=0.0,
+    )
+
+    if len(sentence_boundaries_ids) < sentence_count + 1:
+        return sanitize_numeric_sequence(incoming_scores.tolist())
+
+    total_usable_tokens = max(int(sentence_boundaries_ids[sentence_count]), 1)
+    later_token_opportunities = [
+        max(total_usable_tokens - int(sentence_boundaries_ids[index + 1]), 1)
+        for index in range(sentence_count)
+    ]
+    opportunity_tensor = torch_module.tensor(
+        later_token_opportunities,
+        dtype=incoming_scores.dtype,
+        device=incoming_scores.device,
+    )
+    mean_opportunity = opportunity_tensor.float().mean().clamp(min=1.0).to(incoming_scores.dtype)
+
+    return sanitize_numeric_sequence((incoming_scores * (mean_opportunity / opportunity_tensor)).tolist())
+
+
 class BaseSemanticMarkdownAnalyzer:
     model_name = DEFAULT_MODEL_NAME
     device = "cpu"
@@ -452,13 +486,11 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         if usable_count <= 1:
             raw_scores = [0.0 for _ in resolved_sentences]
         else:
-            incoming_scores = self.torch.nan_to_num(
-                trimmed_attention.sum(dim=0) - self.torch.diag(trimmed_attention),
-                nan=0.0,
-                posinf=0.0,
-                neginf=0.0,
+            raw_scores = compute_opportunity_corrected_sentence_scores(
+                trimmed_attention,
+                sentence_boundaries_ids[:usable_count + 1],
+                self.torch,
             )
-            raw_scores = sanitize_numeric_sequence(incoming_scores.tolist())
 
         sentence_payloads = self._build_sentence_payloads(
             resolved_sentences,

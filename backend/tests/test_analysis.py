@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from backend.analysis import BaseSemanticMarkdownAnalyzer, assign_score_bands, normalize_scores
+from backend.analysis import (
+    BaseSemanticMarkdownAnalyzer,
+    assign_score_bands,
+    compute_opportunity_corrected_sentence_scores,
+    normalize_scores,
+)
 
 
 class DummyAnalyzer(BaseSemanticMarkdownAnalyzer):
@@ -11,6 +16,20 @@ class DummyAnalyzer(BaseSemanticMarkdownAnalyzer):
 
 
 class AnalysisHelpersTestCase(unittest.TestCase):
+    def test_opportunity_corrected_scores_reduce_beginning_bias_without_collapsing_scale(self):
+        import torch
+
+        sentence_attention = torch.tensor([
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [1.0, 1.0, 1.0],
+        ])
+
+        scores = compute_opportunity_corrected_sentence_scores(sentence_attention, [0, 2, 4, 6], torch)
+
+        self.assertAlmostEqual(scores[0], scores[1], places=6)
+        self.assertEqual(scores[2], 0.0)
+
     def test_normalize_scores_uses_midpoint_when_scores_are_equal(self):
         self.assertEqual(normalize_scores([0.0, 0.0, 0.0]), [0.5, 0.5, 0.5])
 

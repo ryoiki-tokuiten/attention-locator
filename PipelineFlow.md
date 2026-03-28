@@ -155,34 +155,89 @@ Because the model is causal:
 So the matrix is directional.
 
 **9. How one sentence gets its final scalar score**
-The colored sentence weight in the main Rendered tab is not a raw matrix value. It is derived from the sentence matrix.
+The colored sentence weight in the main Rendered tab is not a raw matrix value. It is derived from the sentence matrix, but it is now opportunity-corrected to reduce the built-in causal bias toward early sentences.
 
-For sentence `q`, the system computes an incoming-attention score:
+The first step is still the same: for sentence `j`, compute the amount of sentence-level attention it receives from all other sentences:
 
-`raw[q] = sum_p S[p, q] - S[q, q]`
+`I_j = sum_i S(i, j) - S(j, j)`
 
 So:
-- sum the whole column for sentence `q`
+- sum the whole column for sentence `j`
 - remove self-attention on the diagonal
 
-That means a sentence gets a high score when many other sentences look back at it strongly.
+If we stopped here, early sentences would still tend to win simply because more later tokens are allowed to attend to them.
 
-So the redder a sentence is, the more it behaves like an attention sink or anchor for the rest of the document.
+So the system then estimates how many later tokens even had the *opportunity* to cite sentence `j`.
+
+Let:
+- `b_k` = the token boundary index where sentence `k` ends
+- `n` = the number of usable sentences
+- `T = b_n` = the total usable token count in the analyzed document
+
+Then the later-token opportunity count for sentence `j` is:
+
+`O_j = max(T - b_{j+1}, 1)`
+
+This means:
+- look at where sentence `j` ends
+- count how many usable tokens still exist after it
+- clamp the count to at least `1` so the denominator never becomes zero
+
+So `O_j` is literally “how many later tokens were even allowed to look back at this sentence?”
+
+The system then computes the document-average opportunity count:
+
+`O_bar = max((1 / n) * sum_j O_j, 1)`
+
+This average is important. If we only divided by `O_j`, the corrected scores would become artificially tiny for many documents. Instead, the system rescales everything back by the average opportunity count so the magnitudes stay in a comparable range.
+
+The final raw sentence score is therefore:
+
+`R_j = I_j * (O_bar / O_j)`
+
+Equivalently:
+
+`R_j = (sum_i S(i, j) - S(j, j)) * (O_bar / O_j)`
+
+This does three useful things at once:
+- sentences with *more than average* opportunity get scaled down
+- sentences with *less than average* opportunity get scaled up
+- the average overall scale is preserved instead of collapsing toward zero
+
+So the system is no longer using plain incoming attention. It is using an opportunity-corrected citation score.
+
+If sentence-boundary token information is missing or truncated, the system falls back to the simpler uncorrected form:
+
+`R_j = I_j`
 
 **10. How those scores are normalized**
-Those raw scores are document-relative.
+Those corrected raw scores are still document-relative.
 
-The system does min-max normalization across the current document:
+If all corrected scores are identical, every sentence is assigned the neutral midpoint:
 
-`weight[q] = (raw[q] - min(raw)) / (max(raw) - min(raw))`
+`W_j = 0.5`
 
-If every raw score is the same, every sentence gets `0.5`.
+Otherwise the system applies min-max normalization:
 
-So a displayed score near `1.0` means:
-“highest relative incoming attention in this document”
+`W_j = (R_j - min_k R_k) / (max_k R_k - min_k R_k)`
 
-It does **not** mean:
-“the model gave this sentence 100% absolute importance”
+So the full scoring pipeline is:
+
+1. Build the sentence matrix `S`
+2. Compute incoming sentence citation `I_j`
+3. Compute later-token opportunity count `O_j`
+4. Compute average opportunity `O_bar`
+5. Produce corrected raw score `R_j = I_j * (O_bar / O_j)`
+6. Min-max normalize `R_j` into `W_j`
+
+So a displayed score near `1.0` now means:
+- this sentence received unusually strong incoming attention
+- after correcting for how many later tokens were even able to attend to it
+
+It still does **not** mean:
+- the model gave this sentence “100% importance”
+- the sentence is globally important outside the current document
+- the model necessarily used it in a task-specific causal sense
 
 **11. How low / medium / high bands are assigned**
 After normalization, the scores are bucketed into bands using document-relative percentiles.
@@ -268,7 +323,8 @@ Right now the pipeline is:
 `-> max over layers`
 `-> max over token pairs inside sentence rectangles`
 `-> max over heads`
-`-> incoming sentence salience`
+`-> incoming sentence citation`
+`-> later-token opportunity correction`
 `-> normalized sentence weights`
 `-> projection back onto rendered markdown by source offsets`
 
@@ -279,4 +335,4 @@ This is the part people usually blur, so it is worth being precise.
 2. Sentence boundaries are not model-native; they are sentence-tokenizer-defined and then aligned to tokens.
 3. Sentence scores are driven by max pooling, so one strong head/layer/token link can dominate.
 4. The Rendered tab is a sentence-salience overlay, not a literal token-by-token depiction of the exact visible page.
-5. Because the model is causal, the visualization mostly tells you which earlier text later text looks back to.
+5. Because the model is causal, the visualization still mostly tells you which earlier text later text looks back to, even though the opportunity correction reduces the most obvious front-loaded bias.
