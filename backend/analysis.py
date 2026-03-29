@@ -2,11 +2,20 @@ from __future__ import annotations
 
 import gc
 import re
+import shutil
 import unicodedata
 from dataclasses import dataclass
 from math import ceil, floor, isfinite
 from pathlib import Path
 from typing import Any, Sequence
+
+from backend.delta_capture import (
+    DeltaCaptureMetadata,
+    DeltaTensorStore,
+    build_delta_storage_key,
+    estimate_delta_storage_bytes,
+    repeat_key_value_heads,
+)
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -240,6 +249,9 @@ class BaseSemanticMarkdownAnalyzer:
     def analyze_sentence_pair(self, markdown_text: str, sentence_x_index: int, sentence_y_index: int) -> dict[str, Any]:
         raise NotImplementedError("This analyzer does not support token-level sentence pair attention.")
 
+    def capture_delta_document(self, markdown_text: str) -> dict[str, Any]:
+        raise NotImplementedError("This analyzer does not support delta vector capture.")
+
     def _build_sentence_payloads(
         self,
         sentences: Sequence[str],
@@ -292,6 +304,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         self.device = self.attention_backend.device
         self.isa_class = ISA
         self._cached_state: SAVISDocumentState | None = None
+        self._cached_delta_capture: DeltaCaptureMetadata | None = None
 
     def _import_torch(self):
         import torch
@@ -302,6 +315,15 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         gc.collect()
         if self.device == "cuda" and self.torch.cuda.is_available():
             self.torch.cuda.empty_cache()
+
+    def _clear_cached_delta_capture(self) -> None:
+        if self._cached_delta_capture is None:
+            return
+
+        artifact_dir = Path(self._cached_delta_capture.artifact_dir)
+        if artifact_dir.exists():
+            shutil.rmtree(artifact_dir, ignore_errors=True)
+        self._cached_delta_capture = None
 
     def _has_non_finite_tensor_values(self, tensor: Any) -> bool:
         return bool(hasattr(tensor, "numel") and tensor.numel() and not self.torch.isfinite(tensor).all().item())
@@ -379,6 +401,226 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
             "attention": sanitize_numeric_matrix(attention_subset.tolist(), clamp_min=0.0, clamp_max=1.0),
             "warnings": warnings,
         }
+
+    def capture_delta_document(self, markdown_text: str) -> dict[str, Any]:
+        from backend.savis.attention import _model_input_device
+
+        prepared_text = markdown_text.replace("\r\n", "\n").replace("\r", "\n")
+        if not prepared_text.strip():
+            raise ValueError("No analyzable text was provided for delta capture.")
+
+        if (
+            self._cached_delta_capture is not None
+            and self._cached_delta_capture.cache_key == prepared_text
+            and Path(self._cached_delta_capture.artifact_dir).exists()
+        ):
+            return self._cached_delta_capture.to_payload()
+
+        if self._cached_delta_capture is not None:
+            self._clear_cached_delta_capture()
+            self._release_inference_memory()
+
+        model = self.attention_backend.model
+        tokenizer = self.attention_backend.tokenizer
+        input_device = _model_input_device(model, self.device)
+
+        token_ids = tokenizer(prepared_text, add_special_tokens=True).input_ids
+        token_count = len(token_ids)
+        if self.max_input_tokens is not None and token_count > self.max_input_tokens:
+            raise ValueError(
+                f"Document is {token_count} tokens, which exceeds the limit of {self.max_input_tokens}."
+            )
+
+        encoded = tokenizer(prepared_text, return_tensors="pt")
+        model_inputs = {
+            key: value.to(input_device)
+            for key, value in encoded.items()
+        }
+
+        inner_model = getattr(model, "model", model)
+        layers = list(getattr(inner_model, "layers", []))
+        if not layers:
+            raise NotImplementedError("The current model does not expose decoder layers for delta capture.")
+
+        first_attention_module = getattr(layers[0], "self_attn", None)
+        if first_attention_module is None:
+            raise NotImplementedError("The current model layers do not expose self-attention modules for delta capture.")
+
+        layer_count = len(layers)
+        head_dim = int(getattr(first_attention_module, "head_dim", 0) or 0)
+        hidden_size = int(getattr(getattr(first_attention_module, "o_proj", None), "out_features", 0) or 0)
+        head_count = int(
+            getattr(first_attention_module, "num_heads", 0)
+            or (
+                getattr(getattr(first_attention_module, "o_proj", None), "in_features", 0) // head_dim
+                if head_dim
+                else 0
+            )
+        )
+
+        if not all([layer_count, head_count, head_dim, hidden_size]):
+            raise NotImplementedError("Could not resolve layer/head dimensions for delta capture.")
+
+        storage_key = build_delta_storage_key(self.model_name, prepared_text)
+        store = DeltaTensorStore(
+            storage_key=storage_key,
+            layer_count=layer_count,
+            token_count=token_count,
+            head_count=head_count,
+            hidden_size=hidden_size,
+            head_dim=head_dim,
+        )
+
+        warnings: list[str] = []
+        estimated_storage_bytes = estimate_delta_storage_bytes(
+            layer_count=layer_count,
+            token_count=token_count,
+            head_count=head_count,
+            hidden_size=hidden_size,
+            head_dim=head_dim,
+            dtype=str(store.storage_dtype),
+        )
+        if estimated_storage_bytes >= 1024 * 1024 * 1024:
+            warnings.append(
+                "Delta capture for this document is large enough that it will spill well past one gigabyte on disk."
+            )
+        if token_count > HIGH_MEMORY_WARNING_TOKENS:
+            warnings.append(
+                "This document is large enough that per-layer delta capture may be slow or memory intensive."
+            )
+
+        residual_inputs_by_layer: dict[int, Any] = {}
+        completed_layers: set[int] = set()
+        hooks: list[Any] = []
+
+        def build_layer_pre_hook(layer_index: int):
+            def layer_pre_hook(_module: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
+                hidden_states = kwargs.get("hidden_states")
+                if hidden_states is None and args:
+                    hidden_states = args[0]
+                if hidden_states is None:
+                    raise RuntimeError("Layer input hidden states were not available for delta capture.")
+                residual_inputs_by_layer[layer_index] = hidden_states.detach()
+
+            return layer_pre_hook
+
+        def build_attention_hook(layer_index: int, layer_module: Any):
+            def attention_hook(
+                attention_module: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                output: tuple[Any, Any],
+            ) -> None:
+                residual_input = residual_inputs_by_layer.pop(layer_index, None)
+                if residual_input is None:
+                    raise RuntimeError("Layer residual input was not captured before attention output.")
+
+                attn_output, attn_weights = output
+                if attn_weights is None:
+                    raise RuntimeError(
+                        "Delta capture requires attention weights from the active attention implementation."
+                    )
+
+                normalized_hidden_states = kwargs.get("hidden_states")
+                if normalized_hidden_states is None and args:
+                    normalized_hidden_states = args[0]
+                if normalized_hidden_states is None:
+                    raise RuntimeError("Attention input hidden states were not available for delta capture.")
+                batch_size, sequence_length, _ = normalized_hidden_states.shape
+                module_head_count = int(
+                    getattr(attention_module, "num_heads", 0)
+                    or (attention_module.o_proj.in_features // attention_module.head_dim)
+                )
+                key_value_groups = int(getattr(attention_module, "num_key_value_groups", 1) or 1)
+                key_value_heads = int(
+                    getattr(attention_module, "num_key_value_heads", 0)
+                    or max(module_head_count // key_value_groups, 1)
+                )
+                value_states = attention_module.v_proj(normalized_hidden_states)
+                value_states = value_states.view(batch_size, sequence_length, key_value_heads, attention_module.head_dim)
+                value_states = value_states.transpose(1, 2)
+                value_states = repeat_key_value_heads(
+                    value_states,
+                    key_value_groups,
+                )
+
+                head_context = self.torch.matmul(attn_weights, value_states).transpose(1, 2).contiguous()
+                projection_blocks = attention_module.o_proj.weight.reshape(
+                    attention_module.o_proj.out_features,
+                    module_head_count,
+                    attention_module.head_dim,
+                ).permute(1, 0, 2).contiguous()
+                head_projected_delta = self.torch.einsum(
+                    "bthd,hod->btho",
+                    head_context,
+                    projection_blocks,
+                ).contiguous()
+                attention_delta_post_norm = layer_module.post_attention_layernorm(attn_output)
+                residual_after_attention = residual_input + attention_delta_post_norm
+
+                store.write_layer(
+                    layer_index,
+                    residual_input=residual_input.squeeze(0),
+                    head_context=head_context.squeeze(0).permute(1, 0, 2),
+                    head_projected_delta=head_projected_delta.squeeze(0).permute(1, 0, 2),
+                    attention_delta_pre_norm=attn_output.squeeze(0),
+                    attention_delta_post_norm=attention_delta_post_norm.squeeze(0),
+                    residual_after_attention=residual_after_attention.squeeze(0),
+                )
+                completed_layers.add(layer_index)
+
+            return attention_hook
+
+        for layer_index, layer in enumerate(layers):
+            hooks.append(layer.register_forward_pre_hook(build_layer_pre_hook(layer_index), with_kwargs=True))
+            hooks.append(layer.self_attn.register_forward_hook(build_attention_hook(layer_index, layer), with_kwargs=True))
+
+        try:
+            store.write_input_ids(model_inputs["input_ids"][0].detach().cpu().numpy())
+            forward_kwargs: dict[str, Any] = {}
+            if getattr(self.attention_backend, "model_family", None) == "causal":
+                forward_kwargs["use_cache"] = False
+            with self.torch.no_grad():
+                model(**model_inputs, **forward_kwargs)
+        except RuntimeError as exc:
+            store.cleanup()
+            if "out of memory" in str(exc).lower():
+                raise ValueError(
+                    "The model ran out of memory while capturing per-layer delta vectors. "
+                    "Try a shorter document or lower the max input token limit."
+                ) from exc
+            raise
+        finally:
+            for hook in hooks:
+                hook.remove()
+            residual_inputs_by_layer.clear()
+            self._release_inference_memory()
+
+        if len(completed_layers) != layer_count:
+            store.cleanup()
+            raise RuntimeError("Delta capture did not finish for every decoder layer.")
+
+        runtime_dtype = str(next(model.parameters()).dtype).replace("torch.", "")
+        metadata = DeltaCaptureMetadata(
+            cache_key=prepared_text,
+            analysis_text=prepared_text,
+            storage_key=storage_key,
+            artifact_dir=str(store.artifact_dir),
+            token_count=token_count,
+            layer_count=layer_count,
+            head_count=head_count,
+            hidden_size=hidden_size,
+            head_dim=head_dim,
+            runtime_dtype=runtime_dtype,
+            storage_dtype=str(store.storage_dtype),
+            estimated_storage_bytes=estimated_storage_bytes,
+            tensor_shapes=store.tensor_shapes,
+            tensor_paths=store.tensor_paths,
+            warnings=warnings,
+        )
+        store.write_metadata(metadata)
+        self._cached_delta_capture = metadata
+        return metadata.to_payload()
 
     def _compute_state(
         self,

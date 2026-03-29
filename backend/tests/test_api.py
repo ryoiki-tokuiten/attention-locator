@@ -39,6 +39,31 @@ class StubAnalyzer(BaseSemanticMarkdownAnalyzer):
             "warnings": [],
         }
 
+    def capture_delta_document(self, markdown_text: str):
+        return {
+            "cacheKey": markdown_text,
+            "analysisText": markdown_text,
+            "storageKey": "delta-stub",
+            "artifactDir": "/tmp/delta-stub",
+            "tokenCount": 6,
+            "layerCount": 2,
+            "headCount": 4,
+            "hiddenSize": 8,
+            "headDim": 2,
+            "runtimeDtype": "float16",
+            "storageDtype": "float16",
+            "estimatedStorageBytes": 4096,
+            "tensorShapes": {
+                "input_ids": [6],
+                "residual_inputs": [2, 6, 8],
+            },
+            "tensorPaths": {
+                "input_ids": "/tmp/delta-stub/input_ids.npy",
+                "residual_inputs": "/tmp/delta-stub/residual_inputs.npy",
+            },
+            "warnings": [],
+        }
+
 
 class ApiTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_health_reports_ready_when_stub_is_injected(self):
@@ -90,6 +115,18 @@ class ApiTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["sentenceXIndex"], 0)
         self.assertEqual(payload["sentenceYIndex"], 1)
         self.assertEqual(payload["attention"][1][1], 0.4)
+
+    async def test_delta_document_returns_capture_metadata(self):
+        app = create_app(analyzer=StubAnalyzer())
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post("/delta/document", json={"text": "First sentence. Second sentence."})
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload["storageKey"], "delta-stub")
+        self.assertEqual(payload["layerCount"], 2)
+        self.assertIn("residual_inputs", payload["tensorPaths"]["residual_inputs"])
 
 
 if __name__ == "__main__":

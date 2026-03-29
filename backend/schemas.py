@@ -53,3 +53,21 @@ class SentencePairAttentionResponse(BaseModel):
     rowTokens: list[str]
     attention: list[list[float]]
     warnings: list[str] = Field(default_factory=list)
+
+
+class DeltaCaptureResponse(BaseModel):
+    cacheKey: str
+    analysisText: str
+    storageKey: str
+    artifactDir: str
+    tokenCount: int
+    layerCount: int
+    headCount: int
+    hiddenSize: int
+    headDim: int
+    runtimeDtype: str
+    storageDtype: str
+    estimatedStorageBytes: int
+    tensorShapes: dict[str, list[int]]
+    tensorPaths: dict[str, str]
+    warnings: list[str] = Field(default_factory=list)
