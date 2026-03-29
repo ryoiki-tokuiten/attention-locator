@@ -68,6 +68,65 @@ class DeltaCaptureResponse(BaseModel):
     runtimeDtype: str
     storageDtype: str
     estimatedStorageBytes: int
+    tokens: list[str]
     tensorShapes: dict[str, list[int]]
     tensorPaths: dict[str, str]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class DeltaSourceContributionResponse(BaseModel):
+    sourceIndex: int
+    score: float
+    scoreNorm: float
+    share: float
+    distance: int
+    distanceBucket: Literal["local", "medium", "global"]
+    token: str
+    displayToken: str
+    sourceStart: int | None = None
+    sourceEnd: int | None = None
+    visible: bool
+
+
+class DeltaTokenVisualizationResponse(BaseModel):
+    index: int
+    token: str
+    displayToken: str
+    sourceText: str
+    sourceStart: int | None = None
+    sourceEnd: int | None = None
+    visible: bool
+    incomingFlow: float
+    incomingFlowNorm: float
+    localShare: float
+    mediumShare: float
+    globalShare: float
+    drift: float
+    driftNorm: float
+    peakLayer: int
+    peakLayerRatio: float
+    topSources: list[DeltaSourceContributionResponse] = Field(default_factory=list)
+
+
+class DeltaGlobalEdgeResponse(BaseModel):
+    id: str
+    sourceIndex: int
+    targetIndex: int
+    score: float
+    scoreNorm: float
+    distance: int
+    distanceBucket: Literal["local", "medium", "global"]
+    color: str
+
+
+class DeltaVisualizationResponse(BaseModel):
+    analysisText: str
+    tokenCount: int
+    layerCount: int
+    headCount: int
+    hiddenSize: int
+    defaultMode: str
+    tokens: list[DeltaTokenVisualizationResponse]
+    driftByLayer: list[list[float]]
+    globalTopEdges: list[DeltaGlobalEdgeResponse] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

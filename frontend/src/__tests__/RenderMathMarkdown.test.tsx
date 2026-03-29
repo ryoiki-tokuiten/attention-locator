@@ -9,7 +9,7 @@ vi.mock('../Shiki', () => ({
 }));
 
 import { renderMathContent } from '../../RenderMathMarkdownLogic';
-import type { SemanticWeight } from '../types/semantic';
+import type { DeltaVisualizationPayload, SemanticWeight } from '../types/semantic';
 
 describe('renderMathContent', () => {
     it('renders markdown without semantic attributes when no weights are present', () => {
@@ -68,5 +68,49 @@ describe('renderMathContent', () => {
         } as unknown as SemanticWeight]);
 
         expect(html).toContain('Semantic focus belongs here.');
+    });
+
+    it('injects delta token spans for token-level visualization mode', () => {
+        const deltaVisualization: DeltaVisualizationPayload = {
+            analysisText: 'Delta surface token.',
+            tokenCount: 3,
+            layerCount: 2,
+            headCount: 2,
+            hiddenSize: 8,
+            defaultMode: 'local-global',
+            tokens: [
+                {
+                    index: 0,
+                    token: 'Delta',
+                    displayToken: 'Delta',
+                    sourceText: 'Delta',
+                    sourceStart: 0,
+                    sourceEnd: 5,
+                    visible: true,
+                    incomingFlow: 0.3,
+                    incomingFlowNorm: 0.7,
+                    localShare: 0.6,
+                    mediumShare: 0.3,
+                    globalShare: 0.1,
+                    drift: 0.2,
+                    driftNorm: 0.4,
+                    peakLayer: 1,
+                    peakLayerRatio: 1,
+                    topSources: [],
+                },
+            ],
+            driftByLayer: [[0.1, 0.2]],
+            globalTopEdges: [],
+            warnings: [],
+        };
+
+        const html = renderMathContent(
+            'Delta surface token.',
+            [],
+            { mode: 'local-global', tokens: deltaVisualization.tokens },
+        );
+
+        expect(html).toContain('data-delta-index="0"');
+        expect(html).toContain('delta-token');
     });
 });

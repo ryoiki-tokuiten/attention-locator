@@ -13,7 +13,7 @@ import remarkRehype from 'remark-rehype';
 import { unified } from 'unified';
 
 import { highlightCodeSync, isLanguageSupported, resolveLanguage } from './src/Shiki';
-import type { SemanticWeight } from './src/types/semantic';
+import type { DeltaTokenVisualization, DeltaVisualizationMode, SemanticWeight } from './src/types/semantic';
 import { renderIconMarkup } from './src/UI/Icons';
 
 const MAX_CODE_HIGHLIGHT_SIZE = 50000;
@@ -53,6 +53,17 @@ interface SemanticRange {
     sourceStart: number;
     sourceEnd: number;
     semantic: SemanticWeight;
+}
+
+interface DeltaRange {
+    sourceStart: number;
+    sourceEnd: number;
+    token: DeltaTokenVisualization;
+}
+
+interface DeltaVisualizationInput {
+    mode: DeltaVisualizationMode;
+    tokens: DeltaTokenVisualization[];
 }
 
 interface CodeBlockOptions {
@@ -234,6 +245,118 @@ function createSemanticSpan(text: string, semantic: SemanticWeight): HastElement
     };
 }
 
+function deltaColor(weight: number): [number, number, number] {
+    return interpolateColorStops(asFiniteSemanticWeight(weight), [
+        { at: 0, color: [64, 196, 110] },
+        { at: 0.5, color: [80, 154, 255] },
+        { at: 1, color: [255, 92, 92] },
+    ]);
+}
+
+function sourceDrivenColor(positionRatio: number): [number, number, number] {
+    return interpolateColorStops(asFiniteSemanticWeight(positionRatio), [
+        { at: 0, color: [40, 209, 122] },
+        { at: 0.5, color: [69, 138, 255] },
+        { at: 1, color: [255, 110, 110] },
+    ]);
+}
+
+function deltaTooltip(token: DeltaTokenVisualization, mode: DeltaVisualizationMode): string {
+    if (mode === 'drift') {
+        return `Drift ${token.driftNorm.toFixed(3)} · peak layer ${token.peakLayer + 1}`;
+    }
+    if (mode === 'local-global') {
+        return `Flow ${token.incomingFlowNorm.toFixed(3)} · local ${token.localShare.toFixed(2)} · medium ${token.mediumShare.toFixed(2)} · global ${token.globalShare.toFixed(2)}`;
+    }
+    return `Flow ${token.incomingFlowNorm.toFixed(3)} · ${token.topSources.length} source contributors`;
+}
+
+function styleForDeltaToken(token: DeltaTokenVisualization, mode: DeltaVisualizationMode, tokenCount: number): string {
+    const intensity = mode === 'drift' ? token.driftNorm : token.incomingFlowNorm;
+    const [baseRed, baseGreen, baseBlue] = deltaColor(intensity);
+    const localColor: [number, number, number] = [40, 209, 122];
+    const mediumColor: [number, number, number] = [69, 138, 255];
+    const globalColor: [number, number, number] = [255, 110, 110];
+    const primaryComposition = token.topSources[0];
+    const secondaryComposition = token.topSources[1] ?? token.topSources[0];
+    const compositionColorA = sourceDrivenColor((primaryComposition?.sourceIndex ?? token.index) / Math.max(1, tokenCount - 1));
+    const compositionColorB = sourceDrivenColor((secondaryComposition?.sourceIndex ?? token.index) / Math.max(1, tokenCount - 1));
+    const driftColor = interpolateColorStops(token.peakLayerRatio, [
+        { at: 0, color: [52, 211, 153] },
+        { at: 0.5, color: [96, 165, 250] },
+        { at: 1, color: [248, 113, 113] },
+    ]);
+
+    const fillOpacity = (0.18 + (intensity * 0.30)).toFixed(3);
+    const glowOpacity = (0.12 + (intensity * 0.24)).toFixed(3);
+    const textOpacity = (0.74 + (intensity * 0.20)).toFixed(3);
+    const baseDeclarations = [
+        `--delta-weight: ${intensity.toFixed(3)}`,
+        `--delta-primary-rgb: ${rgbVar([baseRed, baseGreen, baseBlue])}`,
+        `--delta-local-rgb: ${rgbVar(localColor)}`,
+        `--delta-medium-rgb: ${rgbVar(mediumColor)}`,
+        `--delta-global-rgb: ${rgbVar(globalColor)}`,
+        `--delta-drift-rgb: ${rgbVar(driftColor)}`,
+        `--delta-comp-a-rgb: ${rgbVar(compositionColorA)}`,
+        `--delta-comp-b-rgb: ${rgbVar(compositionColorB)}`,
+        `--delta-local-share: ${token.localShare.toFixed(3)}`,
+        `--delta-medium-share: ${token.mediumShare.toFixed(3)}`,
+        `--delta-global-share: ${token.globalShare.toFixed(3)}`,
+        `--delta-fill-opacity: ${fillOpacity}`,
+        `--delta-glow-opacity: ${glowOpacity}`,
+        `--delta-text-opacity: ${textOpacity}`,
+    ];
+
+    if (mode === 'local-global') {
+        return [
+            ...baseDeclarations,
+            `background: linear-gradient(135deg, rgba(${rgbVar(localColor)}, ${0.10 + (token.localShare * 0.46)}) 0%, rgba(${rgbVar(mediumColor)}, ${0.10 + (token.mediumShare * 0.48)}) 56%, rgba(${rgbVar(globalColor)}, ${0.10 + (token.globalShare * 0.52)}) 100%)`,
+        ].join('; ');
+    }
+
+    if (mode === 'composition') {
+        return [
+            ...baseDeclarations,
+            `background: linear-gradient(135deg, rgba(${rgbVar(compositionColorA)}, ${0.16 + ((primaryComposition?.share ?? 0.5) * 0.52)}) 0%, rgba(${rgbVar(compositionColorB)}, ${0.14 + ((secondaryComposition?.share ?? 0.3) * 0.50)}) 100%)`,
+        ].join('; ');
+    }
+
+    if (mode === 'drift') {
+        return [
+            ...baseDeclarations,
+            `background: linear-gradient(135deg, rgba(${rgbVar(driftColor)}, ${0.14 + (intensity * 0.46)}) 0%, rgba(${rgbVar([baseRed, baseGreen, baseBlue])}, ${0.10 + (intensity * 0.38)}) 100%)`,
+        ].join('; ');
+    }
+
+    return [
+        ...baseDeclarations,
+        `background: linear-gradient(135deg, rgba(${rgbVar([baseRed, baseGreen, baseBlue])}, ${0.14 + (intensity * 0.50)}) 0%, rgba(${rgbVar(globalColor)}, ${0.08 + ((primaryComposition?.scoreNorm ?? intensity) * 0.36)}) 100%)`,
+    ].join('; ');
+}
+
+function createDeltaSpan(
+    text: string,
+    token: DeltaTokenVisualization,
+    mode: DeltaVisualizationMode,
+    tokenCount: number,
+): HastElement {
+    const intensity = mode === 'drift' ? token.driftNorm : token.incomingFlowNorm;
+    return {
+        type: 'element',
+        tagName: 'span',
+        properties: {
+            className: ['delta-token', `delta-token-${mode}`],
+            'data-delta-index': String(token.index),
+            'data-delta-mode': mode,
+            'data-delta-intensity': intensity.toFixed(3),
+            'data-delta-label': token.displayToken,
+            title: deltaTooltip(token, mode),
+            style: styleForDeltaToken(token, mode, tokenCount),
+        },
+        children: [{ type: 'text', value: text }],
+    };
+}
+
 function getNodeOffset(node: HastRoot | HastElement | HastText, edge: 'start' | 'end'): number | null {
     const position = node.position as {
         start?: { offset?: number };
@@ -277,7 +400,11 @@ function collectTextLeaves(
     });
 }
 
-function applySemanticRanges(leaves: TextLeaf[], ranges: SemanticRange[]) {
+function applyRanges<T>(
+    leaves: TextLeaf[],
+    ranges: Array<{ sourceStart: number; sourceEnd: number; payload: T }>,
+    createSpan: (text: string, payload: T) => HastElement,
+) {
     if (!ranges.length) {
         return;
     }
@@ -307,7 +434,7 @@ function applySemanticRanges(leaves: TextLeaf[], ranges: SemanticRange[]) {
             }
 
             if (localEnd > localStart) {
-                fragments.push(createSemanticSpan(leaf.node.value.slice(localStart, localEnd), range.semantic));
+                fragments.push(createSpan(leaf.node.value.slice(localStart, localEnd), range.payload));
             }
 
             cursor = Math.max(cursor, localEnd);
@@ -371,7 +498,54 @@ function annotateElementWithSemanticWeights(element: HastElement, semanticWeight
         );
     }
 
-    applySemanticRanges(leaves, ranges);
+    applyRanges(
+        leaves,
+        ranges.map((range) => ({
+            sourceStart: range.sourceStart,
+            sourceEnd: range.sourceEnd,
+            payload: range.semantic,
+        })),
+        createSemanticSpan,
+    );
+}
+
+function annotateElementWithDeltaTokens(
+    element: HastElement,
+    deltaVisualization: DeltaVisualizationInput,
+) {
+    const leaves: TextLeaf[] = [];
+    collectTextLeaves(element, leaves);
+
+    if (!leaves.length) {
+        return;
+    }
+
+    const blockStart = Math.min(...leaves.map((leaf) => leaf.sourceStart));
+    const blockEnd = Math.max(...leaves.map((leaf) => leaf.sourceEnd));
+    const ranges: DeltaRange[] = deltaVisualization.tokens
+        .filter((token) => (
+            token.visible &&
+            token.sourceStart != null &&
+            token.sourceEnd != null &&
+            token.sourceEnd > token.sourceStart &&
+            token.sourceEnd > blockStart &&
+            token.sourceStart < blockEnd
+        ))
+        .map((token) => ({
+            sourceStart: token.sourceStart as number,
+            sourceEnd: token.sourceEnd as number,
+            token,
+        }));
+
+    applyRanges(
+        leaves,
+        ranges.map((range) => ({
+            sourceStart: range.sourceStart,
+            sourceEnd: range.sourceEnd,
+            payload: range.token,
+        })),
+        (text, token) => createDeltaSpan(text, token, deltaVisualization.mode, deltaVisualization.tokens.length),
+    );
 }
 
 function renderCodeBlockHtml({
@@ -612,7 +786,10 @@ function preprocessCodeExecutionBlocks(content: string): { processed: string; bl
     return { processed: finalProcessed, blocks: storedBlocks };
 }
 
-function rehypeAddClasses(semanticWeights: SemanticWeight[]) {
+function rehypeAddClasses(
+    semanticWeights: SemanticWeight[],
+    deltaVisualization: DeltaVisualizationInput | null,
+) {
     return () => {
         return (tree: HastRoot) => {
             const visit = (node: HastRoot | HastElement | HastText) => {
@@ -674,7 +851,11 @@ function rehypeAddClasses(semanticWeights: SemanticWeight[]) {
                 }
 
                 if (node.type === 'element' && shouldAnnotateElement(node) && !isSkippedSemanticElement(node)) {
-                    annotateElementWithSemanticWeights(node, semanticWeights);
+                    if (deltaVisualization) {
+                        annotateElementWithDeltaTokens(node, deltaVisualization);
+                    } else {
+                        annotateElementWithSemanticWeights(node, semanticWeights);
+                    }
                 }
             };
 
@@ -683,7 +864,10 @@ function rehypeAddClasses(semanticWeights: SemanticWeight[]) {
     };
 }
 
-function createProcessor(semanticWeights: SemanticWeight[]) {
+function createProcessor(
+    semanticWeights: SemanticWeight[],
+    deltaVisualization: DeltaVisualizationInput | null,
+) {
     return unified()
         .use(remarkParse)
         .use(remarkMath)
@@ -705,7 +889,7 @@ function createProcessor(semanticWeights: SemanticWeight[]) {
             trust: true,
             strict: false,
         })
-        .use(rehypeAddClasses(semanticWeights))
+        .use(rehypeAddClasses(semanticWeights, deltaVisualization))
         .use(rehypeStringify, {
             allowDangerousHtml: true,
         });
@@ -733,7 +917,11 @@ function convertBacktickedLatexToMath(content: string): string {
     });
 }
 
-export function renderMathContent(content: string, semanticWeights: SemanticWeight[] = []): string {
+export function renderMathContent(
+    content: string,
+    semanticWeights: SemanticWeight[] = [],
+    deltaVisualization: DeltaVisualizationInput | null = null,
+): string {
     if (!content) {
         return '';
     }
@@ -749,7 +937,7 @@ export function renderMathContent(content: string, semanticWeights: SemanticWeig
         return renderCompleteDocument(preprocessedContent, 'html');
     }
 
-    const processor = createProcessor(semanticWeights);
+    const processor = createProcessor(semanticWeights, deltaVisualization);
     let resultHtml: string;
 
     try {
@@ -786,6 +974,7 @@ export function renderMathContent(content: string, semanticWeights: SemanticWeig
             'data-semantic-band', 'data-semantic-weight', 'data-semantic-index',
             'data-semantic-score', 'data-semantic-score-label',
             'data-semantic-block-band', 'data-semantic-block-weight', 'data-semantic-block-score-label',
+            'data-delta-index', 'data-delta-mode', 'data-delta-intensity', 'data-delta-label',
             'viewBox', 'd', 'fill', 'stroke', 'stroke-width',
             'x', 'y', 'width', 'height', 'rx', 'ry',
             'points', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r',

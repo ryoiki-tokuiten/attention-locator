@@ -29,7 +29,20 @@ class DeltaCaptureHelpersTestCase(unittest.TestCase):
         )
 
         self.assertGreater(estimate, 0)
-        self.assertEqual(estimate, 4 * 4 + (2 * 4 * 5 * 2) + (2 * 3 * 4 * 7 * 2) + (2 * 3 * 4 * 5 * 2) + (2 * 4 * 5 * 2) + (2 * 4 * 5 * 2) + (2 * 4 * 5 * 2))
+        self.assertEqual(
+            estimate,
+            (4 * 4) +
+            (4 * 2 * 4) +
+            (2 * 4 * 5 * 2) +
+            (2 * 3 * 4 * 4 * 2) +
+            (2 * 3 * 4 * 7 * 2) +
+            (2 * 3 * 4 * 5 * 2) +
+            (2 * 3 * 4 * 7 * 2) +
+            (2 * 3 * 4 * 5 * 2) +
+            (2 * 4 * 5 * 2) +
+            (2 * 4 * 5 * 2) +
+            (2 * 4 * 5 * 2)
+        )
 
     def test_repeat_key_value_heads_matches_group_repeat_shape(self):
         value_states = torch.arange(2 * 1 * 3 * 4, dtype=torch.float32).reshape(2, 1, 3, 4)

@@ -9,6 +9,7 @@ from backend.analysis import DEFAULT_MAX_INPUT_TOKENS, DEFAULT_MODEL_NAME, BaseS
 from backend.schemas import (
     AnalyzeRequest,
     DeltaCaptureResponse,
+    DeltaVisualizationResponse,
     DocumentAttentionResponse,
     HealthResponse,
     SentencePairAttentionResponse,
@@ -160,6 +161,25 @@ def create_app(
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
         return DeltaCaptureResponse.model_validate(payload)
+
+    @app.post("/delta/visualization", response_model=DeltaVisualizationResponse)
+    async def analyze_delta_visualization(request: AnalyzeRequest) -> DeltaVisualizationResponse:
+        async with app.state.inference_lock:
+            runtime_analyzer = resolve_runtime_analyzer()
+            if not getattr(app.state, "ready", False) or runtime_analyzer is None:
+                detail = getattr(app.state, "startup_error", None) or "Model is still loading."
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
+
+            try:
+                payload = runtime_analyzer.analyze_delta_visualization(request.text)
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+            except NotImplementedError as exc:
+                raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
+            except Exception as exc:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+        return DeltaVisualizationResponse.model_validate(payload)
 
     return app
 

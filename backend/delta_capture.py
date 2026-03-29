@@ -31,7 +31,11 @@ def estimate_delta_storage_bytes(
 ) -> int:
     tensor_specs = (
         ((token_count,), np.dtype(np.int32).itemsize),
+        ((token_count, 2), np.dtype(np.int32).itemsize),
         ((layer_count, token_count, hidden_size), np.dtype(dtype).itemsize),
+        ((layer_count, head_count, token_count, token_count), np.dtype(dtype).itemsize),
+        ((layer_count, head_count, token_count, head_dim), np.dtype(dtype).itemsize),
+        ((layer_count, head_count, token_count, hidden_size), np.dtype(dtype).itemsize),
         ((layer_count, head_count, token_count, head_dim), np.dtype(dtype).itemsize),
         ((layer_count, head_count, token_count, hidden_size), np.dtype(dtype).itemsize),
         ((layer_count, token_count, hidden_size), np.dtype(dtype).itemsize),
@@ -70,6 +74,7 @@ class DeltaCaptureMetadata:
     runtime_dtype: str
     storage_dtype: str
     estimated_storage_bytes: int
+    tokens: list[str]
     tensor_shapes: dict[str, list[int]]
     tensor_paths: dict[str, str]
     warnings: list[str]
@@ -89,6 +94,7 @@ class DeltaCaptureMetadata:
             "runtimeDtype": payload["runtime_dtype"],
             "storageDtype": payload["storage_dtype"],
             "estimatedStorageBytes": payload["estimated_storage_bytes"],
+            "tokens": payload["tokens"],
             "tensorShapes": payload["tensor_shapes"],
             "tensorPaths": payload["tensor_paths"],
             "warnings": payload["warnings"],
@@ -114,7 +120,11 @@ class DeltaTensorStore:
 
         self.tensor_shapes = {
             "input_ids": [token_count],
+            "token_offsets": [token_count, 2],
             "residual_inputs": [layer_count, token_count, hidden_size],
+            "attention_weights": [layer_count, head_count, token_count, token_count],
+            "value_states": [layer_count, head_count, token_count, head_dim],
+            "projected_value_states": [layer_count, head_count, token_count, hidden_size],
             "head_contexts": [layer_count, head_count, token_count, head_dim],
             "head_projected_deltas": [layer_count, head_count, token_count, hidden_size],
             "attention_deltas_pre_norm": [layer_count, token_count, hidden_size],
@@ -134,11 +144,35 @@ class DeltaTensorStore:
                 dtype=np.int32,
                 shape=tuple(self.tensor_shapes["input_ids"]),
             ),
+            "token_offsets": np.lib.format.open_memmap(
+                self.tensor_paths["token_offsets"],
+                mode="w+",
+                dtype=np.int32,
+                shape=tuple(self.tensor_shapes["token_offsets"]),
+            ),
             "residual_inputs": np.lib.format.open_memmap(
                 self.tensor_paths["residual_inputs"],
                 mode="w+",
                 dtype=self.storage_dtype,
                 shape=tuple(self.tensor_shapes["residual_inputs"]),
+            ),
+            "attention_weights": np.lib.format.open_memmap(
+                self.tensor_paths["attention_weights"],
+                mode="w+",
+                dtype=self.storage_dtype,
+                shape=tuple(self.tensor_shapes["attention_weights"]),
+            ),
+            "value_states": np.lib.format.open_memmap(
+                self.tensor_paths["value_states"],
+                mode="w+",
+                dtype=self.storage_dtype,
+                shape=tuple(self.tensor_shapes["value_states"]),
+            ),
+            "projected_value_states": np.lib.format.open_memmap(
+                self.tensor_paths["projected_value_states"],
+                mode="w+",
+                dtype=self.storage_dtype,
+                shape=tuple(self.tensor_shapes["projected_value_states"]),
             ),
             "head_contexts": np.lib.format.open_memmap(
                 self.tensor_paths["head_contexts"],
@@ -181,11 +215,17 @@ class DeltaTensorStore:
     def write_input_ids(self, input_ids: Any) -> None:
         self._arrays["input_ids"][:] = np.asarray(input_ids, dtype=np.int32)
 
+    def write_token_offsets(self, token_offsets: Any) -> None:
+        self._arrays["token_offsets"][:] = np.asarray(token_offsets, dtype=np.int32)
+
     def write_layer(
         self,
         layer_index: int,
         *,
         residual_input: Any,
+        attention_weights: Any,
+        value_states: Any,
+        projected_value_states: Any,
         head_context: Any,
         head_projected_delta: Any,
         attention_delta_pre_norm: Any,
@@ -193,6 +233,9 @@ class DeltaTensorStore:
         residual_after_attention: Any,
     ) -> None:
         self._arrays["residual_inputs"][layer_index] = self._to_numpy(residual_input)
+        self._arrays["attention_weights"][layer_index] = self._to_numpy(attention_weights)
+        self._arrays["value_states"][layer_index] = self._to_numpy(value_states)
+        self._arrays["projected_value_states"][layer_index] = self._to_numpy(projected_value_states)
         self._arrays["head_contexts"][layer_index] = self._to_numpy(head_context)
         self._arrays["head_projected_deltas"][layer_index] = self._to_numpy(head_projected_delta)
         self._arrays["attention_deltas_pre_norm"][layer_index] = self._to_numpy(attention_delta_pre_norm)

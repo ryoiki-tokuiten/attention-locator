@@ -53,6 +53,7 @@ class StubAnalyzer(BaseSemanticMarkdownAnalyzer):
             "runtimeDtype": "float16",
             "storageDtype": "float16",
             "estimatedStorageBytes": 4096,
+            "tokens": ["First", "sentence", ".", "Second", "sentence", "."],
             "tensorShapes": {
                 "input_ids": [6],
                 "residual_inputs": [2, 6, 8],
@@ -61,6 +62,40 @@ class StubAnalyzer(BaseSemanticMarkdownAnalyzer):
                 "input_ids": "/tmp/delta-stub/input_ids.npy",
                 "residual_inputs": "/tmp/delta-stub/residual_inputs.npy",
             },
+            "warnings": [],
+        }
+
+    def analyze_delta_visualization(self, markdown_text: str):
+        return {
+            "analysisText": markdown_text,
+            "tokenCount": 6,
+            "layerCount": 2,
+            "headCount": 4,
+            "hiddenSize": 8,
+            "defaultMode": "local-global",
+            "tokens": [
+                {
+                    "index": 0,
+                    "token": "First",
+                    "displayToken": "First",
+                    "sourceText": "First",
+                    "sourceStart": 0,
+                    "sourceEnd": 5,
+                    "visible": True,
+                    "incomingFlow": 0.4,
+                    "incomingFlowNorm": 0.7,
+                    "localShare": 0.6,
+                    "mediumShare": 0.3,
+                    "globalShare": 0.1,
+                    "drift": 0.2,
+                    "driftNorm": 0.5,
+                    "peakLayer": 1,
+                    "peakLayerRatio": 1.0,
+                    "topSources": [],
+                },
+            ],
+            "driftByLayer": [[0.2, 0.4]],
+            "globalTopEdges": [],
             "warnings": [],
         }
 
@@ -127,6 +162,18 @@ class ApiTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["storageKey"], "delta-stub")
         self.assertEqual(payload["layerCount"], 2)
         self.assertIn("residual_inputs", payload["tensorPaths"]["residual_inputs"])
+
+    async def test_delta_visualization_returns_token_payload(self):
+        app = create_app(analyzer=StubAnalyzer())
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post("/delta/visualization", json={"text": "First sentence. Second sentence."})
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload["defaultMode"], "local-global")
+        self.assertEqual(payload["tokenCount"], 6)
+        self.assertEqual(payload["tokens"][0]["incomingFlowNorm"], 0.7)
 
 
 if __name__ == "__main__":

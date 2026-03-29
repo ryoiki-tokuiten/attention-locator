@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { onHighlighterReady, isHighlighterReady } from './src/Shiki';
-import type { SemanticWeight } from './src/types/semantic';
+import type { DeltaTokenVisualization, DeltaVisualizationMode, SemanticWeight } from './src/types/semantic';
 import { Icon, setIconSlot } from './src/UI/Icons';
 import { renderMathContent } from './RenderMathMarkdownLogic';
 
@@ -118,11 +118,16 @@ export interface RenderMathMarkdownProps {
     content: string;
     className?: string;
     semanticWeights?: SemanticWeight[];
+    deltaVisualization?: {
+        mode: DeltaVisualizationMode;
+        tokens: DeltaTokenVisualization[];
+    } | null;
     sentenceArcConnections?: AttentionArcConnection[];
     selectedSentenceIndices?: number[];
     activeArcId?: string | null;
     isSentenceSelectionEnabled?: boolean;
     onSentenceClick?: (sentenceIndex: number) => void;
+    onDeltaTokenClick?: (tokenIndex: number) => void;
     onArcClick?: (arcId: string) => void;
 }
 
@@ -181,11 +186,13 @@ export const RenderMathMarkdown: React.FC<RenderMathMarkdownProps> = ({
     content,
     className = '',
     semanticWeights = [],
+    deltaVisualization = null,
     sentenceArcConnections = [],
     selectedSentenceIndices = [],
     activeArcId = null,
     isSentenceSelectionEnabled = false,
     onSentenceClick,
+    onDeltaTokenClick,
     onArcClick,
 }) => {
     const _isHighlightingReady = useHighlighting();
@@ -291,11 +298,20 @@ export const RenderMathMarkdown: React.FC<RenderMathMarkdownProps> = ({
                 return;
             }
         }
+
+        const deltaToken = target.closest('.delta-token[data-delta-index]') as HTMLElement | null;
+        if (deltaToken && onDeltaTokenClick) {
+            const tokenIndex = Number(deltaToken.dataset.deltaIndex);
+            if (Number.isFinite(tokenIndex)) {
+                onDeltaTokenClick(tokenIndex);
+                return;
+            }
+        }
     };
 
     const htmlContent = useMemo(() => {
-        return renderMathContent(content, semanticWeights);
-    }, [content, semanticWeights, _isHighlightingReady]);
+        return renderMathContent(content, semanticWeights, deltaVisualization);
+    }, [content, deltaVisualization, semanticWeights, _isHighlightingReady]);
 
     const activeArc = useMemo(() => (
         sentenceArcConnections.find((connection) => connection.id === activeArcId) ?? null
@@ -324,8 +340,13 @@ export const RenderMathMarkdown: React.FC<RenderMathMarkdownProps> = ({
             activeEndpoints.add(activeArc.targetIndex);
         }
 
-        container.querySelectorAll<HTMLElement>('.semantic-sentence[data-semantic-index]').forEach((node) => {
-            const sentenceIndex = Number(node.dataset.semanticIndex);
+        const selector = deltaVisualization
+            ? '.delta-token[data-delta-index]'
+            : '.semantic-sentence[data-semantic-index]';
+        const indexKey = deltaVisualization ? 'deltaIndex' : 'semanticIndex';
+
+        container.querySelectorAll<HTMLElement>(selector).forEach((node) => {
+            const sentenceIndex = Number(node.dataset[indexKey as 'deltaIndex' | 'semanticIndex']);
             if (!Number.isFinite(sentenceIndex)) {
                 return;
             }
@@ -376,7 +397,7 @@ export const RenderMathMarkdown: React.FC<RenderMathMarkdownProps> = ({
             width: Math.max(container.scrollWidth, Math.ceil(containerRect.width)),
             height: Math.max(container.scrollHeight, Math.ceil(containerRect.height)),
         });
-    }, [activeArc, isSentenceSelectionEnabled, selectedSentenceIndices, sentenceArcConnections]);
+    }, [activeArc, deltaVisualization, isSentenceSelectionEnabled, selectedSentenceIndices, sentenceArcConnections]);
 
     useEffect(() => {
         const container = containerRef.current;

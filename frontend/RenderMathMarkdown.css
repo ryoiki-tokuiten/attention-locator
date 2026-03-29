@@ -1174,6 +1174,117 @@ body.light-mode .semantic-block[data-semantic-block-band="medium"] {
             rgba(0, 0, 0, 0) 50%);
 }
 
+.delta-token {
+    --delta-weight: 0.35;
+    --delta-primary-rgb: 80, 154, 255;
+    --delta-fill-opacity: 0.22;
+    --delta-glow-opacity: 0.18;
+    --delta-text-opacity: 0.88;
+    position: relative;
+    z-index: 0;
+    display: inline;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    padding: 0.22em 0.56em 0.30em;
+    margin: 0 0.06em 0.12em 0;
+    border-radius: 999px;
+    border: 1px solid rgba(var(--delta-primary-rgb), calc(0.16 + (var(--delta-weight) * 0.34)));
+    color: rgba(247, 249, 255, var(--delta-text-opacity));
+    cursor: pointer;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 12px 24px -20px rgba(var(--delta-primary-rgb), calc(0.12 + var(--delta-glow-opacity)));
+    transition:
+        transform 0.2s ease,
+        filter 0.2s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.delta-token:hover,
+.delta-token:focus-visible {
+    transform: translateY(-1px);
+    filter: brightness(1.05) saturate(1.03);
+}
+
+.delta-token[data-arc-connected="true"] {
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 16px 30px -22px rgba(var(--delta-primary-rgb), calc(0.18 + var(--delta-glow-opacity)));
+}
+
+.delta-token[data-arc-selected="true"] {
+    border-color: rgba(var(--delta-primary-rgb), 0.72);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 0 0 1px rgba(var(--delta-primary-rgb), 0.24),
+        0 18px 32px -22px rgba(var(--delta-primary-rgb), calc(0.22 + var(--delta-glow-opacity)));
+}
+
+.delta-token[data-arc-endpoint="source"] {
+    transform: translateY(-1px);
+}
+
+.delta-token[data-arc-endpoint="target"] {
+    filter: brightness(1.08);
+}
+
+.delta-token::after {
+    content: attr(title);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 12px);
+    transform: translateX(-50%) translateY(6px);
+    opacity: 0;
+    pointer-events: none;
+    padding: 7px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(9, 12, 22, 0.96);
+    color: #f7f4ff;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.34);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+    z-index: 8;
+}
+
+.delta-token::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 6px);
+    width: 8px;
+    height: 8px;
+    transform: translateX(-50%) rotate(45deg) translateY(4px);
+    opacity: 0;
+    pointer-events: none;
+    background: rgba(9, 12, 22, 0.96);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+    z-index: 7;
+}
+
+.delta-token:hover::after,
+.delta-token:hover::before,
+.delta-token:focus-visible::after,
+.delta-token:focus-visible::before {
+    opacity: 1;
+}
+
+.delta-token:hover::after,
+.delta-token:focus-visible::after {
+    transform: translateX(-50%) translateY(0);
+}
+
+.delta-token:hover::before,
+.delta-token:focus-visible::before {
+    transform: translateX(-50%) rotate(45deg) translateY(0);
+}
+
 /* ========================================================================== */
 /* === IMAGE PREVIEW MODAL ================================================== */
 /* ========================================================================== */

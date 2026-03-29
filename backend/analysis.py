@@ -9,6 +9,8 @@ from math import ceil, floor, isfinite
 from pathlib import Path
 from typing import Any, Sequence
 
+import numpy as np
+
 from backend.delta_capture import (
     DeltaCaptureMetadata,
     DeltaTensorStore,
@@ -16,11 +18,17 @@ from backend.delta_capture import (
     estimate_delta_storage_bytes,
     repeat_key_value_heads,
 )
+from backend.delta_visualization import (
+    build_delta_visualization_payload,
+    load_cached_visualization,
+    write_cached_visualization,
+)
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_MODEL_DIR = ROOT_DIR / "model"
 DEFAULT_MAX_INPUT_TOKENS = 10_000
+DEFAULT_MAX_DELTA_VISUALIZATION_TOKENS = 384
 HIGH_MEMORY_WARNING_TOKENS = 4_096
 ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
 WHITESPACE_RE = re.compile(r"\s+")
@@ -252,6 +260,9 @@ class BaseSemanticMarkdownAnalyzer:
     def capture_delta_document(self, markdown_text: str) -> dict[str, Any]:
         raise NotImplementedError("This analyzer does not support delta vector capture.")
 
+    def analyze_delta_visualization(self, markdown_text: str) -> dict[str, Any]:
+        raise NotImplementedError("This analyzer does not support delta visualization.")
+
     def _build_sentence_payloads(
         self,
         sentences: Sequence[str],
@@ -294,11 +305,13 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         self,
         model_name: str = DEFAULT_MODEL_NAME,
         max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS,
+        max_delta_visualization_tokens: int = DEFAULT_MAX_DELTA_VISUALIZATION_TOKENS,
     ) -> None:
         from backend.savis import Attention, ISA
 
         self.model_name = model_name
         self.max_input_tokens = max_input_tokens
+        self.max_delta_visualization_tokens = max_delta_visualization_tokens
         self.torch = self._import_torch()
         self.attention_backend = Attention(model_name, attn_implementation="eager")
         self.device = self.attention_backend.device
@@ -426,12 +439,19 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
 
         token_ids = tokenizer(prepared_text, add_special_tokens=True).input_ids
         token_count = len(token_ids)
-        if self.max_input_tokens is not None and token_count > self.max_input_tokens:
+        delta_token_limit = min(self.max_input_tokens, self.max_delta_visualization_tokens)
+        if delta_token_limit is not None and token_count > delta_token_limit:
             raise ValueError(
-                f"Document is {token_count} tokens, which exceeds the limit of {self.max_input_tokens}."
+                f"Document is {token_count} tokens, which exceeds the delta visualization limit of {delta_token_limit}."
             )
 
         encoded = tokenizer(prepared_text, return_tensors="pt")
+        try:
+            offset_payload = tokenizer(prepared_text, add_special_tokens=True, return_offsets_mapping=True)
+            token_offsets = np.asarray(offset_payload["offset_mapping"], dtype=np.int32)
+        except Exception as exc:  # pragma: no cover - depends on tokenizer capabilities
+            raise NotImplementedError("The active tokenizer does not expose source offset mappings for delta visualization.") from exc
+        token_strings = tokenizer.convert_ids_to_tokens(offset_payload["input_ids"])
         model_inputs = {
             key: value.to(input_device)
             for key, value in encoded.items()
@@ -550,6 +570,11 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
                     module_head_count,
                     attention_module.head_dim,
                 ).permute(1, 0, 2).contiguous()
+                projected_value_states = self.torch.einsum(
+                    "bhtd,hod->bhto",
+                    value_states,
+                    projection_blocks,
+                ).contiguous()
                 head_projected_delta = self.torch.einsum(
                     "bthd,hod->btho",
                     head_context,
@@ -561,6 +586,9 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
                 store.write_layer(
                     layer_index,
                     residual_input=residual_input.squeeze(0),
+                    attention_weights=attn_weights.squeeze(0),
+                    value_states=value_states.squeeze(0),
+                    projected_value_states=projected_value_states.squeeze(0),
                     head_context=head_context.squeeze(0).permute(1, 0, 2),
                     head_projected_delta=head_projected_delta.squeeze(0).permute(1, 0, 2),
                     attention_delta_pre_norm=attn_output.squeeze(0),
@@ -577,6 +605,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
 
         try:
             store.write_input_ids(model_inputs["input_ids"][0].detach().cpu().numpy())
+            store.write_token_offsets(token_offsets)
             forward_kwargs: dict[str, Any] = {}
             if getattr(self.attention_backend, "model_family", None) == "causal":
                 forward_kwargs["use_cache"] = False
@@ -614,6 +643,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
             runtime_dtype=runtime_dtype,
             storage_dtype=str(store.storage_dtype),
             estimated_storage_bytes=estimated_storage_bytes,
+            tokens=token_strings,
             tensor_shapes=store.tensor_shapes,
             tensor_paths=store.tensor_paths,
             warnings=warnings,
@@ -621,6 +651,29 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         store.write_metadata(metadata)
         self._cached_delta_capture = metadata
         return metadata.to_payload()
+
+    def analyze_delta_visualization(self, markdown_text: str) -> dict[str, Any]:
+        prepared_text = markdown_text.replace("\r\n", "\n").replace("\r", "\n")
+        if not prepared_text.strip():
+            raise ValueError("No analyzable text was provided for delta visualization.")
+
+        self.capture_delta_document(prepared_text)
+        metadata = self._cached_delta_capture
+        if metadata is None:
+            raise RuntimeError("Delta capture metadata was not available after capture.")
+
+        cached_visualization = load_cached_visualization(metadata)
+        if cached_visualization is not None:
+            return cached_visualization
+
+        visualization_payload = build_delta_visualization_payload(
+            metadata,
+            prepared_text,
+            self.torch,
+            self.device,
+        )
+        write_cached_visualization(metadata, visualization_payload)
+        return visualization_payload
 
     def _compute_state(
         self,
