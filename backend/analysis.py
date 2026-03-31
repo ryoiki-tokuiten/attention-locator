@@ -666,12 +666,21 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         if cached_visualization is not None:
             return cached_visualization
 
+        state = self._compute_state(prepared_text)
+
         visualization_payload = build_delta_visualization_payload(
             metadata,
             prepared_text,
+            state.sentence_payloads,
+            state.sentence_boundaries_ids,
             self.torch,
             self.device,
         )
+        combined_warnings = list(dict.fromkeys([
+            *state.warnings,
+            *visualization_payload.get("warnings", []),
+        ]))
+        visualization_payload["warnings"] = combined_warnings
         write_cached_visualization(metadata, visualization_payload)
         return visualization_payload
 

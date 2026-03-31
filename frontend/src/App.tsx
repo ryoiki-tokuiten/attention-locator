@@ -45,19 +45,19 @@ const DELTA_RENDER_MODES: Array<{ id: DeltaVisualizationMode; label: string; ico
         id: 'local-global',
         label: 'Local vs global',
         icon: <Globe size={15} />,
-        description: 'Shows whether a token is shaped more by nearby structure or longer-range context.',
+        description: 'Shows whether a sentence is shaped more by nearby structure or longer-range context.',
     },
     {
         id: 'flow-map',
         label: 'Flow map',
         icon: <GitBranch size={15} />,
-        description: 'Draws token-to-token write paths so you can follow where context is flowing from.',
+        description: 'Draws sentence-to-sentence write paths so you can follow where context is flowing from.',
     },
     {
         id: 'composition',
         label: 'Composition',
         icon: <SwatchBook size={15} />,
-        description: 'Colors each token by the strongest source tokens that most contributed to it.',
+        description: 'Colors each sentence by the strongest source sentences that most contributed to it.',
     },
     {
         id: 'drift',
@@ -168,37 +168,37 @@ function asDeltaMode(value: unknown): DeltaVisualizationMode {
 
 function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualizationPayload {
     const candidate = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
-    const tokens = Array.isArray(candidate.tokens) ? candidate.tokens : [];
+    const sentences = Array.isArray(candidate.sentences) ? candidate.sentences : [];
     const globalTopEdges = Array.isArray(candidate.globalTopEdges) ? candidate.globalTopEdges : [];
     const driftByLayer = Array.isArray(candidate.driftByLayer) ? candidate.driftByLayer : [];
 
     return {
         analysisText: asString(candidate.analysisText),
         tokenCount: asFiniteNumber(candidate.tokenCount, 0),
+        sentenceCount: asFiniteNumber(candidate.sentenceCount, 0),
         layerCount: asFiniteNumber(candidate.layerCount, 0),
         headCount: asFiniteNumber(candidate.headCount, 0),
         hiddenSize: asFiniteNumber(candidate.hiddenSize, 0),
         defaultMode: asDeltaMode(candidate.defaultMode),
-        tokens: tokens.map((item, index) => {
-            const tokenCandidate = item && typeof item === 'object' ? item as Record<string, unknown> : {};
-            const topSources = Array.isArray(tokenCandidate.topSources) ? tokenCandidate.topSources : [];
+        sentences: sentences.map((item, index) => {
+            const sentenceCandidate = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+            const topSources = Array.isArray(sentenceCandidate.topSources) ? sentenceCandidate.topSources : [];
             return {
-                index: asFiniteNumber(tokenCandidate.index, index),
-                token: asString(tokenCandidate.token),
-                displayToken: asString(tokenCandidate.displayToken, asString(tokenCandidate.token)),
-                sourceText: asString(tokenCandidate.sourceText),
-                sourceStart: tokenCandidate.sourceStart == null ? null : asFiniteNumber(tokenCandidate.sourceStart, 0),
-                sourceEnd: tokenCandidate.sourceEnd == null ? null : asFiniteNumber(tokenCandidate.sourceEnd, 0),
-                visible: Boolean(tokenCandidate.visible),
-                incomingFlow: asFiniteNumber(tokenCandidate.incomingFlow, 0),
-                incomingFlowNorm: clamp(asFiniteNumber(tokenCandidate.incomingFlowNorm, 0)),
-                localShare: clamp(asFiniteNumber(tokenCandidate.localShare, 0)),
-                mediumShare: clamp(asFiniteNumber(tokenCandidate.mediumShare, 0)),
-                globalShare: clamp(asFiniteNumber(tokenCandidate.globalShare, 0)),
-                drift: asFiniteNumber(tokenCandidate.drift, 0),
-                driftNorm: clamp(asFiniteNumber(tokenCandidate.driftNorm, 0)),
-                peakLayer: asFiniteNumber(tokenCandidate.peakLayer, 0),
-                peakLayerRatio: clamp(asFiniteNumber(tokenCandidate.peakLayerRatio, 0)),
+                index: asFiniteNumber(sentenceCandidate.index, index),
+                sentence: asString(sentenceCandidate.sentence),
+                displaySentence: asString(sentenceCandidate.displaySentence, asString(sentenceCandidate.sentence)),
+                sourceStart: sentenceCandidate.sourceStart == null ? null : asFiniteNumber(sentenceCandidate.sourceStart, 0),
+                sourceEnd: sentenceCandidate.sourceEnd == null ? null : asFiniteNumber(sentenceCandidate.sourceEnd, 0),
+                visible: Boolean(sentenceCandidate.visible),
+                incomingFlow: asFiniteNumber(sentenceCandidate.incomingFlow, 0),
+                incomingFlowNorm: clamp(asFiniteNumber(sentenceCandidate.incomingFlowNorm, 0)),
+                localShare: clamp(asFiniteNumber(sentenceCandidate.localShare, 0)),
+                mediumShare: clamp(asFiniteNumber(sentenceCandidate.mediumShare, 0)),
+                globalShare: clamp(asFiniteNumber(sentenceCandidate.globalShare, 0)),
+                drift: asFiniteNumber(sentenceCandidate.drift, 0),
+                driftNorm: clamp(asFiniteNumber(sentenceCandidate.driftNorm, 0)),
+                peakLayer: asFiniteNumber(sentenceCandidate.peakLayer, 0),
+                peakLayerRatio: clamp(asFiniteNumber(sentenceCandidate.peakLayerRatio, 0)),
                 topSources: topSources.map((source, sourceIndex) => {
                     const sourceCandidate = source && typeof source === 'object' ? source as Record<string, unknown> : {};
                     const distanceBucket = sourceCandidate.distanceBucket === 'local' || sourceCandidate.distanceBucket === 'medium' || sourceCandidate.distanceBucket === 'global'
@@ -212,8 +212,8 @@ function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualization
                         share: clamp(asFiniteNumber(sourceCandidate.share, 0)),
                         distance: asFiniteNumber(sourceCandidate.distance, 0),
                         distanceBucket,
-                        token: asString(sourceCandidate.token),
-                        displayToken: asString(sourceCandidate.displayToken, asString(sourceCandidate.token)),
+                        sentence: asString(sourceCandidate.sentence),
+                        displaySentence: asString(sourceCandidate.displaySentence, asString(sourceCandidate.sentence)),
                         sourceStart: sourceCandidate.sourceStart == null ? null : asFiniteNumber(sourceCandidate.sourceStart, 0),
                         sourceEnd: sourceCandidate.sourceEnd == null ? null : asFiniteNumber(sourceCandidate.sourceEnd, 0),
                         visible: Boolean(sourceCandidate.visible),
@@ -268,9 +268,9 @@ function previewPillLabel(
                 return 'Delta visualization unavailable';
             }
             if (isLoadingDeltaVisualization) {
-                return 'Building token flow surface';
+                return 'Building sentence flow surface';
             }
-            return deltaVisualization ? `${deltaVisualization.tokenCount} model tokens mapped` : 'Delta surface ready on demand';
+            return deltaVisualization ? `${deltaVisualization.sentenceCount} sentence surfaces mapped` : 'Delta surface ready on demand';
         }
         if (renderArcMode !== 'off') {
             if (attentionError && !documentAttention) {
@@ -332,8 +332,8 @@ function previewActivityState(
     if (activeTab === 'rendered' && renderSurfaceMode === 'delta' && isLoadingDeltaVisualization) {
         return {
             kicker: 'Delta capture',
-            title: 'Building the token flow surface',
-            description: 'We are capturing per-layer token deltas and deriving flow summaries for the new rendering mode.',
+            title: 'Building the sentence flow surface',
+            description: 'We are capturing per-layer delta writes and deriving sentence-level flow summaries for the new rendering mode.',
         };
     }
 
@@ -509,7 +509,7 @@ const App: React.FC = () => {
     const [deltaVisualizationError, setDeltaVisualizationError] = useState<string | null>(null);
     const [isLoadingDeltaVisualization, setIsLoadingDeltaVisualization] = useState(false);
     const [deltaVisualizationMode, setDeltaVisualizationMode] = useState<DeltaVisualizationMode>('local-global');
-    const [selectedDeltaTokenIndex, setSelectedDeltaTokenIndex] = useState<number | null>(null);
+    const [selectedDeltaSentenceIndex, setSelectedDeltaSentenceIndex] = useState<number | null>(null);
     const [selectedDeltaEdgeId, setSelectedDeltaEdgeId] = useState<string | null>(null);
     const deferredContent = useDeferredValue(content);
     const latestRequestRef = useRef(0);
@@ -562,7 +562,7 @@ const App: React.FC = () => {
             setSelectedArcId(null);
             setDeltaVisualization(null);
             setDeltaVisualizationError(null);
-            setSelectedDeltaTokenIndex(null);
+            setSelectedDeltaSentenceIndex(null);
             setSelectedDeltaEdgeId(null);
         });
     }, [deferredContent]);
@@ -827,7 +827,7 @@ const App: React.FC = () => {
                 if (latestDeltaVisualizationRequestRef.current === requestId) {
                     startTransition(() => {
                         setDeltaVisualization(payload);
-                        setSelectedDeltaTokenIndex(null);
+                        setSelectedDeltaSentenceIndex(null);
                         setSelectedDeltaEdgeId(null);
                         setDeltaVisualizationError(null);
                     });
@@ -840,7 +840,7 @@ const App: React.FC = () => {
                 if (latestDeltaVisualizationRequestRef.current === requestId) {
                     startTransition(() => {
                         setDeltaVisualization(null);
-                        setSelectedDeltaTokenIndex(null);
+                        setSelectedDeltaSentenceIndex(null);
                         setSelectedDeltaEdgeId(null);
                         setDeltaVisualizationError(error instanceof Error ? error.message : 'Delta visualization failed.');
                     });
@@ -1084,11 +1084,11 @@ const App: React.FC = () => {
         ? focusedLongDistanceOptions.minimumGap
         : globalLongDistanceOptions.minimumGap;
 
-    const selectedDeltaToken = useMemo(() => (
-        selectedDeltaTokenIndex == null
+    const selectedDeltaSentence = useMemo(() => (
+        selectedDeltaSentenceIndex == null
             ? null
-            : (deltaVisualization?.tokens.find((token) => token.index === selectedDeltaTokenIndex) ?? null)
-    ), [deltaVisualization, selectedDeltaTokenIndex]);
+            : (deltaVisualization?.sentences.find((sentence) => sentence.index === selectedDeltaSentenceIndex) ?? null)
+    ), [deltaVisualization, selectedDeltaSentenceIndex]);
 
     const deltaConnections = useMemo(() => {
         if (!deltaVisualization) {
@@ -1096,16 +1096,16 @@ const App: React.FC = () => {
         }
 
         if (deltaVisualizationMode === 'flow-map' || deltaVisualizationMode === 'composition') {
-            if (selectedDeltaToken) {
-                return selectedDeltaToken.topSources
-                    .filter((source) => source.visible && selectedDeltaToken.visible)
+            if (selectedDeltaSentence) {
+                return selectedDeltaSentence.topSources
+                    .filter((source) => source.visible && selectedDeltaSentence.visible)
                     .map((source) => ({
-                        id: `${source.sourceIndex}:${selectedDeltaToken.index}`,
+                        id: `${source.sourceIndex}:${selectedDeltaSentence.index}`,
                         sourceIndex: source.sourceIndex,
-                        targetIndex: selectedDeltaToken.index,
+                        targetIndex: selectedDeltaSentence.index,
                         score: source.scoreNorm,
                         color: attentionColorForWeight(source.scoreNorm),
-                        label: `${source.displayToken} -> ${selectedDeltaToken.displayToken} · ${source.score.toFixed(3)}`,
+                        label: `${source.displaySentence} -> ${selectedDeltaSentence.displaySentence} · ${source.score.toFixed(3)}`,
                     }))
                     .sort((left, right) => right.score - left.score);
             }
@@ -1121,7 +1121,7 @@ const App: React.FC = () => {
         }
 
         return [];
-    }, [deltaVisualization, deltaVisualizationMode, selectedDeltaToken]);
+    }, [deltaVisualization, deltaVisualizationMode, selectedDeltaSentence]);
 
     const activeDeltaArc = useMemo(() => (
         deltaConnections.find((connection) => connection.id === selectedDeltaEdgeId) ?? null
@@ -1130,12 +1130,12 @@ const App: React.FC = () => {
     const selectedDeltaIndices = useMemo(() => {
         const selected = new Set<number>();
 
-        if (selectedDeltaTokenIndex != null) {
-            selected.add(selectedDeltaTokenIndex);
+        if (selectedDeltaSentenceIndex != null) {
+            selected.add(selectedDeltaSentenceIndex);
         }
 
         deltaConnections.forEach((connection) => {
-            if (selectedDeltaTokenIndex != null && connection.targetIndex === selectedDeltaTokenIndex) {
+            if (selectedDeltaSentenceIndex != null && connection.targetIndex === selectedDeltaSentenceIndex) {
                 selected.add(connection.sourceIndex);
                 selected.add(connection.targetIndex);
             }
@@ -1147,9 +1147,9 @@ const App: React.FC = () => {
         }
 
         return [...selected];
-    }, [activeDeltaArc, deltaConnections, selectedDeltaTokenIndex]);
+    }, [activeDeltaArc, deltaConnections, selectedDeltaSentenceIndex]);
 
-    const deltaInspectorSources = selectedDeltaToken?.topSources.filter((source) => source.visible).slice(0, 4) ?? [];
+    const deltaInspectorSources = selectedDeltaSentence?.topSources.filter((source) => source.visible).slice(0, 4) ?? [];
 
     const deltaHelperText = useMemo(() => {
         if (deltaVisualizationError && !deltaVisualization) {
@@ -1157,37 +1157,37 @@ const App: React.FC = () => {
         }
 
         if (isLoadingDeltaVisualization && !deltaVisualization) {
-            return 'Capturing token-level delta vectors and deriving the current flow surface...';
+            return 'Capturing delta writes and deriving the current sentence flow surface...';
         }
 
         if (!deltaVisualization) {
-            return 'Open the delta surface to derive token flow, composition, drift, and context routing directly from the model writes.';
+            return 'Open the delta surface to derive sentence flow, composition, drift, and context routing directly from the model writes.';
         }
 
         if (deltaVisualizationMode === 'local-global') {
-            return 'Each visible token is filled by its local, medium-range, and long-range write mix. Click a token to inspect its strongest contributors.';
+            return 'Each visible sentence is filled by its local, medium-range, and long-range write mix. Click a sentence to inspect its strongest contributors.';
         }
 
         if (deltaVisualizationMode === 'drift') {
-            return 'Tokens with stronger cross-layer updates glow harder. Click any token to inspect where its rewrite pressure peaks.';
+            return 'Sentences with stronger cross-layer updates glow harder. Click any sentence to inspect where its rewrite pressure peaks.';
         }
 
-        if (selectedDeltaToken) {
-            return `Showing the strongest source tokens writing into ${selectedDeltaToken.displayToken}.`;
+        if (selectedDeltaSentence) {
+            return `Showing the strongest source sentences writing into ${selectedDeltaSentence.displaySentence}.`;
         }
 
-        return 'Click a token to trace its strongest upstream source tokens across the rendered document.';
+        return 'Click a sentence to trace its strongest upstream source sentences across the rendered document.';
     }, [
         deltaVisualization,
         deltaVisualizationError,
         deltaVisualizationMode,
         isLoadingDeltaVisualization,
-        selectedDeltaToken,
+        selectedDeltaSentence,
     ]);
 
-    const handleRenderedDeltaTokenClick = (tokenIndex: number) => {
+    const handleRenderedDeltaSentenceClick = (sentenceIndex: number) => {
         setSelectedDeltaEdgeId(null);
-        setSelectedDeltaTokenIndex((currentIndex) => currentIndex === tokenIndex ? null : tokenIndex);
+        setSelectedDeltaSentenceIndex((currentIndex) => currentIndex === sentenceIndex ? null : sentenceIndex);
     };
 
     return (
@@ -1346,7 +1346,7 @@ const App: React.FC = () => {
                                         <span className="surface-mode-caption">
                                             {renderSurfaceMode === 'semantic'
                                                 ? 'Sentence-level surface styling from SAVIS attention.'
-                                                : 'Token-level surface styling from cached delta vectors.'}
+                                                : 'Sentence-level surface styling from cached delta writes.'}
                                         </span>
                                     </section>
 
@@ -1523,7 +1523,7 @@ const App: React.FC = () => {
                                                 <div className="delta-toolbar-header">
                                                     <div>
                                                         <p className="panel-label">Delta visualization</p>
-                                                        <h3>Token flow through residual writes</h3>
+                                                        <h3>Sentence flow through residual writes</h3>
                                                     </div>
                                                     <SwatchBook size={18} />
                                                 </div>
@@ -1557,12 +1557,12 @@ const App: React.FC = () => {
                                                             </div>
                                                         ) : null}
                                                     </div>
-                                                    {(selectedDeltaTokenIndex != null || selectedDeltaEdgeId) ? (
+                                                    {(selectedDeltaSentenceIndex != null || selectedDeltaEdgeId) ? (
                                                         <button
                                                             type="button"
                                                             className="arc-clear-button"
                                                             onClick={() => {
-                                                                setSelectedDeltaTokenIndex(null);
+                                                                setSelectedDeltaSentenceIndex(null);
                                                                 setSelectedDeltaEdgeId(null);
                                                             }}
                                                         >
@@ -1571,32 +1571,32 @@ const App: React.FC = () => {
                                                     ) : null}
                                                 </div>
 
-                                                {(deltaVisualization?.warnings.length || selectedDeltaToken) ? (
+                                                {(deltaVisualization?.warnings.length || selectedDeltaSentence) ? (
                                                     <div className="delta-inspector-grid">
-                                                        {selectedDeltaToken ? (
-                                                            <section className="delta-inspector-card" aria-label="Selected token inspector">
+                                                        {selectedDeltaSentence ? (
+                                                            <section className="delta-inspector-card" aria-label="Selected sentence inspector">
                                                                 <div className="delta-inspector-header">
-                                                                    <strong>{selectedDeltaToken.displayToken}</strong>
-                                                                    <span>Token {selectedDeltaToken.index}</span>
+                                                                    <strong>{selectedDeltaSentence.displaySentence}</strong>
+                                                                    <span>Sentence {selectedDeltaSentence.index}</span>
                                                                 </div>
                                                                 <div className="delta-inspector-metrics">
-                                                                    <span>Flow {selectedDeltaToken.incomingFlowNorm.toFixed(3)}</span>
-                                                                    <span>Drift {selectedDeltaToken.driftNorm.toFixed(3)}</span>
-                                                                    <span>Peak layer {selectedDeltaToken.peakLayer + 1}</span>
+                                                                    <span>Flow {selectedDeltaSentence.incomingFlowNorm.toFixed(3)}</span>
+                                                                    <span>Drift {selectedDeltaSentence.driftNorm.toFixed(3)}</span>
+                                                                    <span>Peak layer {selectedDeltaSentence.peakLayer + 1}</span>
                                                                 </div>
                                                                 {deltaInspectorSources.length ? (
                                                                     <div className="delta-source-badges">
                                                                         {deltaInspectorSources.map((source) => (
                                                                             <button
-                                                                                key={`${selectedDeltaToken.index}-${source.sourceIndex}`}
+                                                                                key={`${selectedDeltaSentence.index}-${source.sourceIndex}`}
                                                                                 type="button"
                                                                                 className="delta-source-badge"
                                                                                 onClick={() => {
-                                                                                    setSelectedDeltaTokenIndex(source.sourceIndex);
+                                                                                    setSelectedDeltaSentenceIndex(source.sourceIndex);
                                                                                     setSelectedDeltaEdgeId(null);
                                                                                 }}
                                                                             >
-                                                                                <span>{source.displayToken}</span>
+                                                                                <span>{source.displaySentence}</span>
                                                                                 <small>{source.distanceBucket} · {source.scoreNorm.toFixed(2)}</small>
                                                                             </button>
                                                                         ))}
@@ -1624,12 +1624,12 @@ const App: React.FC = () => {
 
                                             <RenderMathMarkdown
                                                 content={content}
-                                                deltaVisualization={deltaVisualization ? { mode: deltaVisualizationMode, tokens: deltaVisualization.tokens } : null}
+                                                deltaVisualization={deltaVisualization ? { mode: deltaVisualizationMode, sentences: deltaVisualization.sentences } : null}
                                                 sentenceArcConnections={deltaConnections}
                                                 selectedSentenceIndices={selectedDeltaIndices}
                                                 activeArcId={selectedDeltaEdgeId}
                                                 isSentenceSelectionEnabled
-                                                onDeltaTokenClick={handleRenderedDeltaTokenClick}
+                                                onDeltaSentenceClick={handleRenderedDeltaSentenceClick}
                                                 onArcClick={(arcId) => setSelectedDeltaEdgeId((currentId) => currentId === arcId ? null : arcId)}
                                             />
                                         </>

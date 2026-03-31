@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { onHighlighterReady, isHighlighterReady } from './src/Shiki';
-import type { DeltaTokenVisualization, DeltaVisualizationMode, SemanticWeight } from './src/types/semantic';
+import type { DeltaSentenceVisualization, DeltaVisualizationMode, SemanticWeight } from './src/types/semantic';
 import { Icon, setIconSlot } from './src/UI/Icons';
 import { renderMathContent } from './RenderMathMarkdownLogic';
 
@@ -120,14 +120,14 @@ export interface RenderMathMarkdownProps {
     semanticWeights?: SemanticWeight[];
     deltaVisualization?: {
         mode: DeltaVisualizationMode;
-        tokens: DeltaTokenVisualization[];
+        sentences: DeltaSentenceVisualization[];
     } | null;
     sentenceArcConnections?: AttentionArcConnection[];
     selectedSentenceIndices?: number[];
     activeArcId?: string | null;
     isSentenceSelectionEnabled?: boolean;
     onSentenceClick?: (sentenceIndex: number) => void;
-    onDeltaTokenClick?: (tokenIndex: number) => void;
+    onDeltaSentenceClick?: (sentenceIndex: number) => void;
     onArcClick?: (arcId: string) => void;
 }
 
@@ -192,7 +192,7 @@ export const RenderMathMarkdown: React.FC<RenderMathMarkdownProps> = ({
     activeArcId = null,
     isSentenceSelectionEnabled = false,
     onSentenceClick,
-    onDeltaTokenClick,
+    onDeltaSentenceClick,
     onArcClick,
 }) => {
     const _isHighlightingReady = useHighlighting();
@@ -300,10 +300,10 @@ export const RenderMathMarkdown: React.FC<RenderMathMarkdownProps> = ({
         }
 
         const deltaToken = target.closest('.delta-token[data-delta-index]') as HTMLElement | null;
-        if (deltaToken && onDeltaTokenClick) {
-            const tokenIndex = Number(deltaToken.dataset.deltaIndex);
-            if (Number.isFinite(tokenIndex)) {
-                onDeltaTokenClick(tokenIndex);
+        if (deltaToken && onDeltaSentenceClick) {
+            const sentenceIndex = Number(deltaToken.dataset.deltaIndex);
+            if (Number.isFinite(sentenceIndex)) {
+                onDeltaSentenceClick(sentenceIndex);
                 return;
             }
         }

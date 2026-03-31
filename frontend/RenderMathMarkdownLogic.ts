@@ -13,7 +13,7 @@ import remarkRehype from 'remark-rehype';
 import { unified } from 'unified';
 
 import { highlightCodeSync, isLanguageSupported, resolveLanguage } from './src/Shiki';
-import type { DeltaTokenVisualization, DeltaVisualizationMode, SemanticWeight } from './src/types/semantic';
+import type { DeltaSentenceVisualization, DeltaVisualizationMode, SemanticWeight } from './src/types/semantic';
 import { renderIconMarkup } from './src/UI/Icons';
 
 const MAX_CODE_HIGHLIGHT_SIZE = 50000;
@@ -58,12 +58,12 @@ interface SemanticRange {
 interface DeltaRange {
     sourceStart: number;
     sourceEnd: number;
-    token: DeltaTokenVisualization;
+    sentence: DeltaSentenceVisualization;
 }
 
 interface DeltaVisualizationInput {
     mode: DeltaVisualizationMode;
-    tokens: DeltaTokenVisualization[];
+    sentences: DeltaSentenceVisualization[];
 }
 
 interface CodeBlockOptions {
@@ -261,27 +261,27 @@ function sourceDrivenColor(positionRatio: number): [number, number, number] {
     ]);
 }
 
-function deltaTooltip(token: DeltaTokenVisualization, mode: DeltaVisualizationMode): string {
+function deltaTooltip(sentence: DeltaSentenceVisualization, mode: DeltaVisualizationMode): string {
     if (mode === 'drift') {
-        return `Drift ${token.driftNorm.toFixed(3)} · peak layer ${token.peakLayer + 1}`;
+        return `Drift ${sentence.driftNorm.toFixed(3)} · peak layer ${sentence.peakLayer + 1}`;
     }
     if (mode === 'local-global') {
-        return `Flow ${token.incomingFlowNorm.toFixed(3)} · local ${token.localShare.toFixed(2)} · medium ${token.mediumShare.toFixed(2)} · global ${token.globalShare.toFixed(2)}`;
+        return `Flow ${sentence.incomingFlowNorm.toFixed(3)} · local ${sentence.localShare.toFixed(2)} · medium ${sentence.mediumShare.toFixed(2)} · global ${sentence.globalShare.toFixed(2)}`;
     }
-    return `Flow ${token.incomingFlowNorm.toFixed(3)} · ${token.topSources.length} source contributors`;
+    return `Flow ${sentence.incomingFlowNorm.toFixed(3)} · ${sentence.topSources.length} source sentences`;
 }
 
-function styleForDeltaToken(token: DeltaTokenVisualization, mode: DeltaVisualizationMode, tokenCount: number): string {
-    const intensity = mode === 'drift' ? token.driftNorm : token.incomingFlowNorm;
+function styleForDeltaSentence(sentence: DeltaSentenceVisualization, mode: DeltaVisualizationMode, sentenceCount: number): string {
+    const intensity = mode === 'drift' ? sentence.driftNorm : sentence.incomingFlowNorm;
     const [baseRed, baseGreen, baseBlue] = deltaColor(intensity);
     const localColor: [number, number, number] = [40, 209, 122];
     const mediumColor: [number, number, number] = [69, 138, 255];
     const globalColor: [number, number, number] = [255, 110, 110];
-    const primaryComposition = token.topSources[0];
-    const secondaryComposition = token.topSources[1] ?? token.topSources[0];
-    const compositionColorA = sourceDrivenColor((primaryComposition?.sourceIndex ?? token.index) / Math.max(1, tokenCount - 1));
-    const compositionColorB = sourceDrivenColor((secondaryComposition?.sourceIndex ?? token.index) / Math.max(1, tokenCount - 1));
-    const driftColor = interpolateColorStops(token.peakLayerRatio, [
+    const primaryComposition = sentence.topSources[0];
+    const secondaryComposition = sentence.topSources[1] ?? sentence.topSources[0];
+    const compositionColorA = sourceDrivenColor((primaryComposition?.sourceIndex ?? sentence.index) / Math.max(1, sentenceCount - 1));
+    const compositionColorB = sourceDrivenColor((secondaryComposition?.sourceIndex ?? sentence.index) / Math.max(1, sentenceCount - 1));
+    const driftColor = interpolateColorStops(sentence.peakLayerRatio, [
         { at: 0, color: [52, 211, 153] },
         { at: 0.5, color: [96, 165, 250] },
         { at: 1, color: [248, 113, 113] },
@@ -299,9 +299,9 @@ function styleForDeltaToken(token: DeltaTokenVisualization, mode: DeltaVisualiza
         `--delta-drift-rgb: ${rgbVar(driftColor)}`,
         `--delta-comp-a-rgb: ${rgbVar(compositionColorA)}`,
         `--delta-comp-b-rgb: ${rgbVar(compositionColorB)}`,
-        `--delta-local-share: ${token.localShare.toFixed(3)}`,
-        `--delta-medium-share: ${token.mediumShare.toFixed(3)}`,
-        `--delta-global-share: ${token.globalShare.toFixed(3)}`,
+        `--delta-local-share: ${sentence.localShare.toFixed(3)}`,
+        `--delta-medium-share: ${sentence.mediumShare.toFixed(3)}`,
+        `--delta-global-share: ${sentence.globalShare.toFixed(3)}`,
         `--delta-fill-opacity: ${fillOpacity}`,
         `--delta-glow-opacity: ${glowOpacity}`,
         `--delta-text-opacity: ${textOpacity}`,
@@ -310,7 +310,7 @@ function styleForDeltaToken(token: DeltaTokenVisualization, mode: DeltaVisualiza
     if (mode === 'local-global') {
         return [
             ...baseDeclarations,
-            `background: linear-gradient(135deg, rgba(${rgbVar(localColor)}, ${0.10 + (token.localShare * 0.46)}) 0%, rgba(${rgbVar(mediumColor)}, ${0.10 + (token.mediumShare * 0.48)}) 56%, rgba(${rgbVar(globalColor)}, ${0.10 + (token.globalShare * 0.52)}) 100%)`,
+            `background: linear-gradient(135deg, rgba(${rgbVar(localColor)}, ${0.10 + (sentence.localShare * 0.46)}) 0%, rgba(${rgbVar(mediumColor)}, ${0.10 + (sentence.mediumShare * 0.48)}) 56%, rgba(${rgbVar(globalColor)}, ${0.10 + (sentence.globalShare * 0.52)}) 100%)`,
         ].join('; ');
     }
 
@@ -336,22 +336,22 @@ function styleForDeltaToken(token: DeltaTokenVisualization, mode: DeltaVisualiza
 
 function createDeltaSpan(
     text: string,
-    token: DeltaTokenVisualization,
+    sentence: DeltaSentenceVisualization,
     mode: DeltaVisualizationMode,
-    tokenCount: number,
+    sentenceCount: number,
 ): HastElement {
-    const intensity = mode === 'drift' ? token.driftNorm : token.incomingFlowNorm;
+    const intensity = mode === 'drift' ? sentence.driftNorm : sentence.incomingFlowNorm;
     return {
         type: 'element',
         tagName: 'span',
         properties: {
             className: ['delta-token', `delta-token-${mode}`],
-            'data-delta-index': String(token.index),
+            'data-delta-index': String(sentence.index),
             'data-delta-mode': mode,
             'data-delta-intensity': intensity.toFixed(3),
-            'data-delta-label': token.displayToken,
-            title: deltaTooltip(token, mode),
-            style: styleForDeltaToken(token, mode, tokenCount),
+            'data-delta-label': sentence.displaySentence,
+            title: deltaTooltip(sentence, mode),
+            style: styleForDeltaSentence(sentence, mode, sentenceCount),
         },
         children: [{ type: 'text', value: text }],
     };
@@ -522,19 +522,19 @@ function annotateElementWithDeltaTokens(
 
     const blockStart = Math.min(...leaves.map((leaf) => leaf.sourceStart));
     const blockEnd = Math.max(...leaves.map((leaf) => leaf.sourceEnd));
-    const ranges: DeltaRange[] = deltaVisualization.tokens
-        .filter((token) => (
-            token.visible &&
-            token.sourceStart != null &&
-            token.sourceEnd != null &&
-            token.sourceEnd > token.sourceStart &&
-            token.sourceEnd > blockStart &&
-            token.sourceStart < blockEnd
+    const ranges: DeltaRange[] = deltaVisualization.sentences
+        .filter((sentence) => (
+            sentence.visible &&
+            sentence.sourceStart != null &&
+            sentence.sourceEnd != null &&
+            sentence.sourceEnd > sentence.sourceStart &&
+            sentence.sourceEnd > blockStart &&
+            sentence.sourceStart < blockEnd
         ))
-        .map((token) => ({
-            sourceStart: token.sourceStart as number,
-            sourceEnd: token.sourceEnd as number,
-            token,
+        .map((sentence) => ({
+            sourceStart: sentence.sourceStart as number,
+            sourceEnd: sentence.sourceEnd as number,
+            sentence,
         }));
 
     applyRanges(
@@ -542,9 +542,9 @@ function annotateElementWithDeltaTokens(
         ranges.map((range) => ({
             sourceStart: range.sourceStart,
             sourceEnd: range.sourceEnd,
-            payload: range.token,
+            payload: range.sentence,
         })),
-        (text, token) => createDeltaSpan(text, token, deltaVisualization.mode, deltaVisualization.tokens.length),
+        (text, sentence) => createDeltaSpan(text, sentence, deltaVisualization.mode, deltaVisualization.sentences.length),
     );
 }
 

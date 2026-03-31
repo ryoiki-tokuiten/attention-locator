@@ -48,18 +48,17 @@ export interface DeltaSourceContribution {
     share: number;
     distance: number;
     distanceBucket: DeltaDistanceBucket;
-    token: string;
-    displayToken: string;
+    sentence: string;
+    displaySentence: string;
     sourceStart: number | null;
     sourceEnd: number | null;
     visible: boolean;
 }
 
-export interface DeltaTokenVisualization {
+export interface DeltaSentenceVisualization {
     index: number;
-    token: string;
-    displayToken: string;
-    sourceText: string;
+    sentence: string;
+    displaySentence: string;
     sourceStart: number | null;
     sourceEnd: number | null;
     visible: boolean;
@@ -89,11 +88,12 @@ export interface DeltaGlobalEdge {
 export interface DeltaVisualizationPayload {
     analysisText: string;
     tokenCount: number;
+    sentenceCount: number;
     layerCount: number;
     headCount: number;
     hiddenSize: number;
     defaultMode: DeltaVisualizationMode;
-    tokens: DeltaTokenVisualization[];
+    sentences: DeltaSentenceVisualization[];
     driftByLayer: number[][];
     globalTopEdges: DeltaGlobalEdge[];
     warnings: string[];

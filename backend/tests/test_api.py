@@ -69,18 +69,18 @@ class StubAnalyzer(BaseSemanticMarkdownAnalyzer):
         return {
             "analysisText": markdown_text,
             "tokenCount": 6,
+            "sentenceCount": 2,
             "layerCount": 2,
             "headCount": 4,
             "hiddenSize": 8,
             "defaultMode": "local-global",
-            "tokens": [
+            "sentences": [
                 {
                     "index": 0,
-                    "token": "First",
-                    "displayToken": "First",
-                    "sourceText": "First",
+                    "sentence": "First sentence.",
+                    "displaySentence": "First sentence.",
                     "sourceStart": 0,
-                    "sourceEnd": 5,
+                    "sourceEnd": 15,
                     "visible": True,
                     "incomingFlow": 0.4,
                     "incomingFlowNorm": 0.7,
@@ -173,7 +173,8 @@ class ApiTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload["defaultMode"], "local-global")
         self.assertEqual(payload["tokenCount"], 6)
-        self.assertEqual(payload["tokens"][0]["incomingFlowNorm"], 0.7)
+        self.assertEqual(payload["sentenceCount"], 2)
+        self.assertEqual(payload["sentences"][0]["incomingFlowNorm"], 0.7)
 
 
 if __name__ == "__main__":

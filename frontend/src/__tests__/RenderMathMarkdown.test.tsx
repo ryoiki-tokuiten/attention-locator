@@ -70,22 +70,22 @@ describe('renderMathContent', () => {
         expect(html).toContain('Semantic focus belongs here.');
     });
 
-    it('injects delta token spans for token-level visualization mode', () => {
+    it('injects delta spans for sentence-level visualization mode', () => {
         const deltaVisualization: DeltaVisualizationPayload = {
-            analysisText: 'Delta surface token.',
+            analysisText: 'Delta surface sentence.',
             tokenCount: 3,
+            sentenceCount: 1,
             layerCount: 2,
             headCount: 2,
             hiddenSize: 8,
             defaultMode: 'local-global',
-            tokens: [
+            sentences: [
                 {
                     index: 0,
-                    token: 'Delta',
-                    displayToken: 'Delta',
-                    sourceText: 'Delta',
+                    sentence: 'Delta surface sentence.',
+                    displaySentence: 'Delta surface sentence.',
                     sourceStart: 0,
-                    sourceEnd: 5,
+                    sourceEnd: 'Delta surface sentence.'.length,
                     visible: true,
                     incomingFlow: 0.3,
                     incomingFlowNorm: 0.7,
@@ -105,9 +105,9 @@ describe('renderMathContent', () => {
         };
 
         const html = renderMathContent(
-            'Delta surface token.',
+            'Delta surface sentence.',
             [],
-            { mode: 'local-global', tokens: deltaVisualization.tokens },
+            { mode: 'local-global', sentences: deltaVisualization.sentences },
         );
 
         expect(html).toContain('data-delta-index="0"');

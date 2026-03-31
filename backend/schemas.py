@@ -81,18 +81,17 @@ class DeltaSourceContributionResponse(BaseModel):
     share: float
     distance: int
     distanceBucket: Literal["local", "medium", "global"]
-    token: str
-    displayToken: str
+    sentence: str
+    displaySentence: str
     sourceStart: int | None = None
     sourceEnd: int | None = None
     visible: bool
 
 
-class DeltaTokenVisualizationResponse(BaseModel):
+class DeltaSentenceVisualizationResponse(BaseModel):
     index: int
-    token: str
-    displayToken: str
-    sourceText: str
+    sentence: str
+    displaySentence: str
     sourceStart: int | None = None
     sourceEnd: int | None = None
     visible: bool
@@ -122,11 +121,12 @@ class DeltaGlobalEdgeResponse(BaseModel):
 class DeltaVisualizationResponse(BaseModel):
     analysisText: str
     tokenCount: int
+    sentenceCount: int
     layerCount: int
     headCount: int
     hiddenSize: int
     defaultMode: str
-    tokens: list[DeltaTokenVisualizationResponse]
+    sentences: list[DeltaSentenceVisualizationResponse]
     driftByLayer: list[list[float]]
     globalTopEdges: list[DeltaGlobalEdgeResponse] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
