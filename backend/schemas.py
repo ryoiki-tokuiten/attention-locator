@@ -105,6 +105,7 @@ class DeltaSentenceVisualizationResponse(BaseModel):
     peakLayer: int
     peakLayerRatio: float
     topSources: list[DeltaSourceContributionResponse] = Field(default_factory=list)
+    vectorFlow: dict[str, float] | None = None
 
 
 class DeltaGlobalEdgeResponse(BaseModel):
@@ -118,6 +119,22 @@ class DeltaGlobalEdgeResponse(BaseModel):
     color: str
 
 
+class DeltaVectorFlowBoundsResponse(BaseModel):
+    minX: float
+    maxX: float
+    minY: float
+    maxY: float
+
+
+class DeltaVectorFlowResponse(BaseModel):
+    projection: str
+    angleAmplification: float
+    baseWeight: float
+    deltaWeight: float
+    unitCircleRadius: float
+    bounds: DeltaVectorFlowBoundsResponse
+
+
 class DeltaVisualizationResponse(BaseModel):
     analysisText: str
     tokenCount: int
@@ -129,4 +146,5 @@ class DeltaVisualizationResponse(BaseModel):
     sentences: list[DeltaSentenceVisualizationResponse]
     driftByLayer: list[list[float]]
     globalTopEdges: list[DeltaGlobalEdgeResponse] = Field(default_factory=list)
+    vectorFlow: DeltaVectorFlowResponse
     warnings: list[str] = Field(default_factory=list)

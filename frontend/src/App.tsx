@@ -1,8 +1,9 @@
 import React, { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { FileText, GitBranch, Globe, LoaderCircle, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, SwatchBook, Target } from 'lucide-react';
+import { Compass, FileText, GitBranch, Globe, LoaderCircle, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, SwatchBook, Target } from 'lucide-react';
 
 import { GlobalImagePreviewModal, RenderMathMarkdown, type AttentionArcConnection } from '../RenderMathMarkdown';
 import AttentionExplorer, { attentionColorForWeight, type AttentionTab } from './AttentionExplorer';
+import DeltaVectorFlowCanvas from './DeltaVectorFlowCanvas';
 import type {
     DeltaVisualizationMode,
     DeltaVisualizationPayload,
@@ -42,6 +43,12 @@ const RENDER_SURFACE_MODES = [
 
 const DELTA_RENDER_MODES: Array<{ id: DeltaVisualizationMode; label: string; icon: React.ReactNode; description: string }> = [
     {
+        id: 'vector-flow',
+        label: 'Vector flow',
+        icon: <Compass size={15} />,
+        description: 'Projects each sentence and its attention delta into 2D, scales them with bounded lengths, and chains the composed vectors across the canvas.',
+    },
+    {
         id: 'local-global',
         label: 'Local vs global',
         icon: <Globe size={15} />,
@@ -63,7 +70,7 @@ const DELTA_RENDER_MODES: Array<{ id: DeltaVisualizationMode; label: string; ico
         id: 'drift',
         label: 'Drift',
         icon: <Target size={15} />,
-        description: 'Highlights tokens whose representations are being rewritten most strongly across depth.',
+        description: 'Highlights sentences whose representations are being rewritten most strongly across depth.',
     },
 ] as const;
 
@@ -161,9 +168,9 @@ function sanitizeSentencePairAttentionPayload(payload: unknown): SentencePairAtt
 }
 
 function asDeltaMode(value: unknown): DeltaVisualizationMode {
-    return value === 'flow-map' || value === 'composition' || value === 'drift' || value === 'local-global'
+    return value === 'vector-flow' || value === 'flow-map' || value === 'composition' || value === 'drift' || value === 'local-global'
         ? value
-        : 'local-global';
+        : 'vector-flow';
 }
 
 function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualizationPayload {
@@ -199,6 +206,23 @@ function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualization
                 driftNorm: clamp(asFiniteNumber(sentenceCandidate.driftNorm, 0)),
                 peakLayer: asFiniteNumber(sentenceCandidate.peakLayer, 0),
                 peakLayerRatio: clamp(asFiniteNumber(sentenceCandidate.peakLayerRatio, 0)),
+                vectorFlow: sentenceCandidate.vectorFlow && typeof sentenceCandidate.vectorFlow === 'object'
+                    ? {
+                        anchorX: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).anchorX, 0),
+                        anchorY: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).anchorY, 0),
+                        sentenceEndX: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).sentenceEndX, 0),
+                        sentenceEndY: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).sentenceEndY, 0),
+                        updatedEndX: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).updatedEndX, 0),
+                        updatedEndY: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).updatedEndY, 0),
+                        sentenceAngle: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).sentenceAngle, 0),
+                        deltaAngle: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).deltaAngle, 0),
+                        deltaRelativeAngle: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).deltaRelativeAngle, 0),
+                        composedAngle: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).composedAngle, 0),
+                        sentenceMagnitude: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).sentenceMagnitude, 0),
+                        deltaMagnitude: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).deltaMagnitude, 0),
+                        composedMagnitude: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).composedMagnitude, 0),
+                    }
+                    : null,
                 topSources: topSources.map((source, sourceIndex) => {
                     const sourceCandidate = source && typeof source === 'object' ? source as Record<string, unknown> : {};
                     const distanceBucket = sourceCandidate.distanceBucket === 'local' || sourceCandidate.distanceBucket === 'medium' || sourceCandidate.distanceBucket === 'global'
@@ -243,6 +267,28 @@ function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualization
                 color: asString(edgeCandidate.color, attentionColorForWeight(asFiniteNumber(edgeCandidate.scoreNorm, 0))),
             };
         }),
+        vectorFlow: candidate.vectorFlow && typeof candidate.vectorFlow === 'object'
+            ? {
+                projection: asString((candidate.vectorFlow as Record<string, unknown>).projection, 'pca'),
+                angleAmplification: asFiniteNumber((candidate.vectorFlow as Record<string, unknown>).angleAmplification, 36),
+                baseWeight: asFiniteNumber((candidate.vectorFlow as Record<string, unknown>).baseWeight, 1.2),
+                deltaWeight: asFiniteNumber((candidate.vectorFlow as Record<string, unknown>).deltaWeight, 0.55),
+                unitCircleRadius: asFiniteNumber((candidate.vectorFlow as Record<string, unknown>).unitCircleRadius, 1),
+                bounds: {
+                    minX: asFiniteNumber((((candidate.vectorFlow as Record<string, unknown>).bounds as Record<string, unknown>)?.minX), -1.5),
+                    maxX: asFiniteNumber((((candidate.vectorFlow as Record<string, unknown>).bounds as Record<string, unknown>)?.maxX), 1.5),
+                    minY: asFiniteNumber((((candidate.vectorFlow as Record<string, unknown>).bounds as Record<string, unknown>)?.minY), -1.5),
+                    maxY: asFiniteNumber((((candidate.vectorFlow as Record<string, unknown>).bounds as Record<string, unknown>)?.maxY), 1.5),
+                },
+            }
+            : {
+                projection: 'pca',
+                angleAmplification: 36,
+                baseWeight: 1.2,
+                deltaWeight: 0.55,
+                unitCircleRadius: 1,
+                bounds: { minX: -1.5, maxX: 1.5, minY: -1.5, maxY: 1.5 },
+            },
         warnings: asStringArray(candidate.warnings),
     };
 }
@@ -508,7 +554,7 @@ const App: React.FC = () => {
     const [deltaVisualization, setDeltaVisualization] = useState<DeltaVisualizationPayload | null>(null);
     const [deltaVisualizationError, setDeltaVisualizationError] = useState<string | null>(null);
     const [isLoadingDeltaVisualization, setIsLoadingDeltaVisualization] = useState(false);
-    const [deltaVisualizationMode, setDeltaVisualizationMode] = useState<DeltaVisualizationMode>('local-global');
+    const [deltaVisualizationMode, setDeltaVisualizationMode] = useState<DeltaVisualizationMode>('vector-flow');
     const [selectedDeltaSentenceIndex, setSelectedDeltaSentenceIndex] = useState<number | null>(null);
     const [selectedDeltaEdgeId, setSelectedDeltaEdgeId] = useState<string | null>(null);
     const deferredContent = useDeferredValue(content);
@@ -1164,6 +1210,10 @@ const App: React.FC = () => {
             return 'Open the delta surface to derive sentence flow, composition, drift, and context routing directly from the model writes.';
         }
 
+        if (deltaVisualizationMode === 'vector-flow') {
+            return `Each sentence is projected into 2D against a local unit-circle reference, then its attention delta is added and the composed update becomes the next anchor. Display angles are amplified ${deltaVisualization.vectorFlow.angleAmplification.toFixed(0)}x, while vector lengths are bounded from the sentence and delta magnitudes so the flow opens up without blowing out. Drag to pan and scroll to zoom.`;
+        }
+
         if (deltaVisualizationMode === 'local-global') {
             return 'Each visible sentence is filled by its local, medium-range, and long-range write mix. Click a sentence to inspect its strongest contributors.';
         }
@@ -1583,6 +1633,16 @@ const App: React.FC = () => {
                                                                     <span>Flow {selectedDeltaSentence.incomingFlowNorm.toFixed(3)}</span>
                                                                     <span>Drift {selectedDeltaSentence.driftNorm.toFixed(3)}</span>
                                                                     <span>Peak layer {selectedDeltaSentence.peakLayer + 1}</span>
+                                                                    {deltaVisualizationMode === 'vector-flow' && selectedDeltaSentence.vectorFlow ? (
+                                                                        <>
+                                                                            <span>Sentence {selectedDeltaSentence.vectorFlow.sentenceAngle.toFixed(1)}°</span>
+                                                                            <span>Delta {selectedDeltaSentence.vectorFlow.deltaRelativeAngle.toFixed(1)}°</span>
+                                                                            <span>Composed {selectedDeltaSentence.vectorFlow.composedMagnitude.toFixed(2)}</span>
+                                                                            {deltaVisualization ? (
+                                                                                <span>Visual {deltaVisualization.vectorFlow.angleAmplification.toFixed(0)}x</span>
+                                                                            ) : null}
+                                                                        </>
+                                                                    ) : null}
                                                                 </div>
                                                                 {deltaInspectorSources.length ? (
                                                                     <div className="delta-source-badges">
@@ -1622,16 +1682,24 @@ const App: React.FC = () => {
                                                 </div>
                                             ) : null}
 
-                                            <RenderMathMarkdown
-                                                content={content}
-                                                deltaVisualization={deltaVisualization ? { mode: deltaVisualizationMode, sentences: deltaVisualization.sentences } : null}
-                                                sentenceArcConnections={deltaConnections}
-                                                selectedSentenceIndices={selectedDeltaIndices}
-                                                activeArcId={selectedDeltaEdgeId}
-                                                isSentenceSelectionEnabled
-                                                onDeltaSentenceClick={handleRenderedDeltaSentenceClick}
-                                                onArcClick={(arcId) => setSelectedDeltaEdgeId((currentId) => currentId === arcId ? null : arcId)}
-                                            />
+                                            {deltaVisualizationMode === 'vector-flow' ? (
+                                                <DeltaVectorFlowCanvas
+                                                    visualization={deltaVisualization}
+                                                    selectedSentenceIndex={selectedDeltaSentenceIndex}
+                                                    onSelectSentence={handleRenderedDeltaSentenceClick}
+                                                />
+                                            ) : (
+                                                <RenderMathMarkdown
+                                                    content={content}
+                                                    deltaVisualization={deltaVisualization ? { mode: deltaVisualizationMode, sentences: deltaVisualization.sentences } : null}
+                                                    sentenceArcConnections={deltaConnections}
+                                                    selectedSentenceIndices={selectedDeltaIndices}
+                                                    activeArcId={selectedDeltaEdgeId}
+                                                    isSentenceSelectionEnabled
+                                                    onDeltaSentenceClick={handleRenderedDeltaSentenceClick}
+                                                    onArcClick={(arcId) => setSelectedDeltaEdgeId((currentId) => currentId === arcId ? null : arcId)}
+                                                />
+                                            )}
                                         </>
                                     )}
                                 </div>

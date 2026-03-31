@@ -38,7 +38,7 @@ export interface SentencePairAttentionPayload {
     warnings: string[];
 }
 
-export type DeltaVisualizationMode = 'local-global' | 'flow-map' | 'composition' | 'drift';
+export type DeltaVisualizationMode = 'vector-flow' | 'local-global' | 'flow-map' | 'composition' | 'drift';
 export type DeltaDistanceBucket = 'local' | 'medium' | 'global';
 
 export interface DeltaSourceContribution {
@@ -72,6 +72,21 @@ export interface DeltaSentenceVisualization {
     peakLayer: number;
     peakLayerRatio: number;
     topSources: DeltaSourceContribution[];
+    vectorFlow?: {
+        anchorX: number;
+        anchorY: number;
+        sentenceEndX: number;
+        sentenceEndY: number;
+        updatedEndX: number;
+        updatedEndY: number;
+        sentenceAngle: number;
+        deltaAngle: number;
+        deltaRelativeAngle: number;
+        composedAngle: number;
+        sentenceMagnitude: number;
+        deltaMagnitude: number;
+        composedMagnitude: number;
+    } | null;
 }
 
 export interface DeltaGlobalEdge {
@@ -96,5 +111,18 @@ export interface DeltaVisualizationPayload {
     sentences: DeltaSentenceVisualization[];
     driftByLayer: number[][];
     globalTopEdges: DeltaGlobalEdge[];
+    vectorFlow: {
+        projection: string;
+        angleAmplification: number;
+        baseWeight: number;
+        deltaWeight: number;
+        unitCircleRadius: number;
+        bounds: {
+            minX: number;
+            maxX: number;
+            minY: number;
+            maxY: number;
+        };
+    };
     warnings: string[];
 }

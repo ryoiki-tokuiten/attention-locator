@@ -10,12 +10,18 @@ import numpy as np
 from backend.delta_capture import DeltaCaptureMetadata
 
 
-DEFAULT_DELTA_VISUALIZATION_MODE = "local-global"
+DEFAULT_DELTA_VISUALIZATION_MODE = "vector-flow"
 DEFAULT_DELTA_TOP_SOURCES = 4
 DEFAULT_DELTA_GLOBAL_EDGES = 28
 DEFAULT_DELTA_FLOW_BLOCK_SIZE = 6
 LOCAL_FLOW_DISTANCE = 1
 MEDIUM_FLOW_DISTANCE = 4
+ANGLE_VISUALIZATION_MULTIPLIER = 36.0
+SENTENCE_VECTOR_MIN_LENGTH = 1.2
+SENTENCE_VECTOR_MAX_LENGTH = 3.4
+DELTA_VECTOR_MIN_LENGTH = 0.55
+DELTA_VECTOR_MAX_LENGTH = 1.8
+UNIT_CIRCLE_RADIUS = 1.0
 DELTA_VISUALIZATION_FILENAME = "delta_visualization.json"
 
 
@@ -48,10 +54,6 @@ def _distance_bucket(distance: int) -> str:
     return "global"
 
 
-def _token_label(token: str) -> str:
-    return token.replace("Ġ", " ").replace("▁", " ").replace("\n", "\\n")
-
-
 def _edge_color(score: float) -> str:
     clamped = max(0.0, min(1.0, float(score)))
     if clamped <= 0.5:
@@ -75,7 +77,11 @@ def load_cached_visualization(metadata: DeltaCaptureMetadata) -> dict[str, Any] 
     if not cache_path.exists():
         return None
     payload = json.loads(cache_path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or not isinstance(payload.get("sentences"), list):
+    if (
+        not isinstance(payload, dict) or
+        not isinstance(payload.get("sentences"), list) or
+        not isinstance(payload.get("vectorFlow"), dict)
+    ):
         return None
     return payload
 
@@ -162,6 +168,183 @@ def _sentence_label(sentence: str, limit: int = 84) -> str:
     return f"{compact[:limit - 1].rstrip()}…"
 
 
+def _project_to_2d(vectors: np.ndarray) -> np.ndarray:
+    if vectors.size == 0:
+        return np.zeros((0, 2), dtype=np.float32)
+
+    centered = vectors.astype(np.float32, copy=False) - vectors.mean(axis=0, keepdims=True)
+    if centered.ndim != 2 or centered.shape[0] == 0:
+        return np.zeros((0, 2), dtype=np.float32)
+
+    _, _, vh = np.linalg.svd(centered, full_matrices=False)
+    basis = vh[:2].T if vh.size else np.zeros((vectors.shape[1], 0), dtype=np.float32)
+    projected = centered @ basis if basis.size else np.zeros((vectors.shape[0], 0), dtype=np.float32)
+    if projected.shape[1] < 2:
+        projected = np.pad(projected, ((0, 0), (0, 2 - projected.shape[1])))
+    return projected[:, :2].astype(np.float32, copy=False)
+
+
+def _normalize_vector_2d(vector: np.ndarray, radius: float, fallback_direction: np.ndarray) -> np.ndarray:
+    norm = float(np.linalg.norm(vector))
+    if norm <= 1e-6:
+        fallback_norm = float(np.linalg.norm(fallback_direction))
+        if fallback_norm <= 1e-6:
+            return np.asarray([radius, 0.0], dtype=np.float32)
+        return (fallback_direction.astype(np.float32, copy=False) / fallback_norm) * radius
+    return (vector.astype(np.float32, copy=False) / norm) * radius
+
+
+def _bounded_visual_lengths(
+    magnitudes: np.ndarray,
+    *,
+    min_length: float,
+    max_length: float,
+) -> np.ndarray:
+    if magnitudes.size == 0:
+        return np.zeros(0, dtype=np.float32)
+
+    clean = np.nan_to_num(magnitudes.astype(np.float32, copy=False), nan=0.0, posinf=0.0, neginf=0.0)
+    positive = clean[clean > 1e-6]
+    if positive.size == 0:
+        return np.full(clean.shape, min_length, dtype=np.float32)
+
+    lower = float(np.percentile(positive, 15))
+    upper = float(np.percentile(positive, 90))
+    spread = max(upper - lower, max(upper, 1.0) * 1e-3)
+    normalized = np.clip((clean - lower) / spread, 0.0, None)
+    eased = np.tanh(normalized * 1.35)
+    lengths = min_length + (eased * (max_length - min_length))
+    return np.clip(lengths, min_length, max_length).astype(np.float32, copy=False)
+
+
+def _signed_angle_degrees(left: np.ndarray, right: np.ndarray) -> float:
+    left_norm = float(np.linalg.norm(left))
+    right_norm = float(np.linalg.norm(right))
+    if left_norm <= 1e-6 or right_norm <= 1e-6:
+        return 0.0
+    cross = float((left[0] * right[1]) - (left[1] * right[0]))
+    dot = float(np.dot(left, right))
+    return math.degrees(math.atan2(cross, dot))
+
+
+def _vector_angle_degrees(vector: np.ndarray) -> float:
+    return math.degrees(math.atan2(float(vector[1]), float(vector[0])))
+
+
+def _wrap_degrees(angle: float) -> float:
+    return ((angle + 180.0) % 360.0) - 180.0
+
+
+def _vector_from_angle_degrees(angle: float, magnitude: float) -> np.ndarray:
+    radians = math.radians(angle)
+    return np.asarray([
+        math.cos(radians) * magnitude,
+        math.sin(radians) * magnitude,
+    ], dtype=np.float32)
+
+
+def _build_vector_flow_payload(
+    *,
+    sentence_payloads: list[dict[str, Any]],
+    base_sentence_vectors: np.ndarray,
+    delta_sentence_vectors: np.ndarray,
+) -> dict[str, Any]:
+    sentence_count = len(sentence_payloads)
+    if sentence_count == 0:
+        return {
+            "projection": "pca",
+            "angleAmplification": ANGLE_VISUALIZATION_MULTIPLIER,
+            "baseWeight": SENTENCE_VECTOR_MIN_LENGTH,
+            "deltaWeight": DELTA_VECTOR_MIN_LENGTH,
+            "unitCircleRadius": UNIT_CIRCLE_RADIUS,
+            "bounds": {"minX": -1.5, "maxX": 1.5, "minY": -1.5, "maxY": 1.5},
+        }
+
+    projection_source = np.concatenate(
+        [
+            base_sentence_vectors,
+            delta_sentence_vectors,
+            base_sentence_vectors + delta_sentence_vectors,
+        ],
+        axis=0,
+    )
+    projected = _project_to_2d(projection_source)
+    projected_base = projected[:sentence_count]
+    projected_delta = projected[sentence_count:sentence_count * 2]
+    base_lengths = _bounded_visual_lengths(
+        np.linalg.norm(base_sentence_vectors.astype(np.float32, copy=False), axis=1),
+        min_length=SENTENCE_VECTOR_MIN_LENGTH,
+        max_length=SENTENCE_VECTOR_MAX_LENGTH,
+    )
+    delta_lengths = _bounded_visual_lengths(
+        np.linalg.norm(delta_sentence_vectors.astype(np.float32, copy=False), axis=1),
+        min_length=DELTA_VECTOR_MIN_LENGTH,
+        max_length=DELTA_VECTOR_MAX_LENGTH,
+    )
+
+    updated_end = np.zeros(2, dtype=np.float32)
+    previous_composed_direction = np.asarray([1.0, 0.0], dtype=np.float32)
+    all_points: list[np.ndarray] = []
+
+    for sentence_index in range(sentence_count):
+        anchor = updated_end.copy()
+        raw_sentence_vector = _normalize_vector_2d(
+            projected_base[sentence_index],
+            float(base_lengths[sentence_index]),
+            previous_composed_direction,
+        )
+        raw_delta_vector = _normalize_vector_2d(
+            projected_delta[sentence_index],
+            float(delta_lengths[sentence_index]),
+            raw_sentence_vector,
+        )
+        raw_sentence_angle = _vector_angle_degrees(raw_sentence_vector)
+        raw_delta_relative_angle = _signed_angle_degrees(raw_sentence_vector, raw_delta_vector)
+        sentence_angle = _wrap_degrees(raw_sentence_angle * ANGLE_VISUALIZATION_MULTIPLIER)
+        delta_relative_angle = _wrap_degrees(raw_delta_relative_angle * ANGLE_VISUALIZATION_MULTIPLIER)
+        sentence_vector = _vector_from_angle_degrees(sentence_angle, float(base_lengths[sentence_index]))
+        delta_angle = _wrap_degrees(sentence_angle + delta_relative_angle)
+        delta_vector = _vector_from_angle_degrees(delta_angle, float(delta_lengths[sentence_index]))
+        sentence_end = anchor + sentence_vector
+        updated_end = sentence_end + delta_vector
+        composed_vector = updated_end - anchor
+        if np.linalg.norm(composed_vector) > 1e-6:
+            previous_composed_direction = composed_vector
+
+        sentence_payloads[sentence_index]["vectorFlow"] = {
+            "anchorX": round(float(anchor[0]), 6),
+            "anchorY": round(float(anchor[1]), 6),
+            "sentenceEndX": round(float(sentence_end[0]), 6),
+            "sentenceEndY": round(float(sentence_end[1]), 6),
+            "updatedEndX": round(float(updated_end[0]), 6),
+            "updatedEndY": round(float(updated_end[1]), 6),
+            "sentenceAngle": round(sentence_angle, 6),
+            "deltaAngle": round(delta_angle, 6),
+            "deltaRelativeAngle": round(delta_relative_angle, 6),
+            "composedAngle": round(_vector_angle_degrees(composed_vector), 6),
+            "sentenceMagnitude": round(float(np.linalg.norm(sentence_vector)), 6),
+            "deltaMagnitude": round(float(np.linalg.norm(delta_vector)), 6),
+            "composedMagnitude": round(float(np.linalg.norm(composed_vector)), 6),
+        }
+        all_points.extend([anchor, sentence_end, updated_end])
+
+    coordinates = np.vstack(all_points) if all_points else np.zeros((1, 2), dtype=np.float32)
+    padding = UNIT_CIRCLE_RADIUS * 1.6
+    return {
+        "projection": "pca",
+        "angleAmplification": ANGLE_VISUALIZATION_MULTIPLIER,
+        "baseWeight": SENTENCE_VECTOR_MIN_LENGTH,
+        "deltaWeight": DELTA_VECTOR_MIN_LENGTH,
+        "unitCircleRadius": UNIT_CIRCLE_RADIUS,
+        "bounds": {
+            "minX": round(float(coordinates[:, 0].min() - padding), 6),
+            "maxX": round(float(coordinates[:, 0].max() + padding), 6),
+            "minY": round(float(coordinates[:, 1].min() - padding), 6),
+            "maxY": round(float(coordinates[:, 1].max() + padding), 6),
+        },
+    }
+
+
 def build_delta_visualization_payload(
     metadata: DeltaCaptureMetadata,
     analysis_text: str,
@@ -175,6 +358,7 @@ def build_delta_visualization_payload(
     flow_block_size: int = DEFAULT_DELTA_FLOW_BLOCK_SIZE,
 ) -> dict[str, Any]:
     token_offsets = _load_memmap(metadata.tensor_paths["token_offsets"]).astype(np.int32, copy=False)
+    residual_inputs = _load_memmap(metadata.tensor_paths["residual_inputs"])
     attention_weights = _load_memmap(metadata.tensor_paths["attention_weights"])
     projected_value_states = _load_memmap(metadata.tensor_paths["projected_value_states"])
     attention_deltas_post_norm = _load_memmap(metadata.tensor_paths["attention_deltas_post_norm"])
@@ -203,6 +387,18 @@ def build_delta_visualization_payload(
         )
         for start, end in sentence_offsets
     ], dtype=bool)
+
+    base_token_states = np.asarray(residual_inputs[0], dtype=np.float32)
+    cumulative_attention_deltas = np.asarray(attention_deltas_post_norm, dtype=np.float32).sum(axis=0)
+    base_sentence_vectors = np.zeros((sentence_count, metadata.hidden_size), dtype=np.float32)
+    delta_sentence_vectors = np.zeros((sentence_count, metadata.hidden_size), dtype=np.float32)
+    for sentence_index in range(sentence_count):
+        token_indices = np.flatnonzero(token_to_sentence == sentence_index)
+        if token_indices.size:
+            base_sentence_vectors[sentence_index] = base_token_states[token_indices].mean(axis=0)
+            delta_sentence_vectors[sentence_index] = cumulative_attention_deltas[token_indices].mean(axis=0)
+    base_sentence_vectors = np.nan_to_num(base_sentence_vectors, nan=0.0, posinf=0.0, neginf=0.0)
+    delta_sentence_vectors = np.nan_to_num(delta_sentence_vectors, nan=0.0, posinf=0.0, neginf=0.0)
 
     drift_by_layer = np.linalg.norm(attention_deltas_post_norm.astype(np.float32), axis=-1).transpose(1, 0)
     sentence_drift_by_layer = np.zeros((sentence_count, metadata.layer_count), dtype=np.float32)
@@ -372,6 +568,12 @@ def build_delta_visualization_payload(
             }
         )
 
+    vector_flow_payload = _build_vector_flow_payload(
+        sentence_payloads=sentences_payload,
+        base_sentence_vectors=base_sentence_vectors,
+        delta_sentence_vectors=delta_sentence_vectors,
+    )
+
     candidate_edges: list[dict[str, Any]] = []
     for target_index, sentence_payload in enumerate(sentences_payload):
         for source in sentence_payload["topSources"]:
@@ -406,5 +608,6 @@ def build_delta_visualization_payload(
         "sentences": sentences_payload,
         "driftByLayer": np.round(drift_layers_norm, 6).tolist(),
         "globalTopEdges": global_top_edges,
+        "vectorFlow": vector_flow_payload,
         "warnings": list(metadata.warnings),
     }

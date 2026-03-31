@@ -73,7 +73,7 @@ class StubAnalyzer(BaseSemanticMarkdownAnalyzer):
             "layerCount": 2,
             "headCount": 4,
             "hiddenSize": 8,
-            "defaultMode": "local-global",
+            "defaultMode": "vector-flow",
             "sentences": [
                 {
                     "index": 0,
@@ -91,11 +91,34 @@ class StubAnalyzer(BaseSemanticMarkdownAnalyzer):
                     "driftNorm": 0.5,
                     "peakLayer": 1,
                     "peakLayerRatio": 1.0,
+                    "vectorFlow": {
+                        "anchorX": 0,
+                        "anchorY": 0,
+                        "sentenceEndX": 1.8,
+                        "sentenceEndY": 0,
+                        "updatedEndX": 2.6,
+                        "updatedEndY": 0.45,
+                        "sentenceAngle": 0,
+                        "deltaAngle": 36,
+                        "deltaRelativeAngle": 36,
+                        "composedAngle": 10,
+                        "sentenceMagnitude": 1.8,
+                        "deltaMagnitude": 0.92,
+                        "composedMagnitude": 2.638181,
+                    },
                     "topSources": [],
                 },
             ],
             "driftByLayer": [[0.2, 0.4]],
             "globalTopEdges": [],
+            "vectorFlow": {
+                "projection": "pca",
+                "angleAmplification": 36.0,
+                "baseWeight": 1.2,
+                "deltaWeight": 0.55,
+                "unitCircleRadius": 1.0,
+                "bounds": {"minX": -1.5, "maxX": 1.5, "minY": -1.5, "maxY": 1.5},
+            },
             "warnings": [],
         }
 
@@ -171,7 +194,7 @@ class ApiTestCase(unittest.IsolatedAsyncioTestCase):
 
         payload = response.json()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(payload["defaultMode"], "local-global")
+        self.assertEqual(payload["defaultMode"], "vector-flow")
         self.assertEqual(payload["tokenCount"], 6)
         self.assertEqual(payload["sentenceCount"], 2)
         self.assertEqual(payload["sentences"][0]["incomingFlowNorm"], 0.7)

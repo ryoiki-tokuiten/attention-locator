@@ -495,7 +495,10 @@ textarea {
 .preview-surface {
     flex: 1;
     min-height: 0;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable both-edges;
     padding: 18px 20px 24px;
     background: linear-gradient(180deg, rgba(7, 11, 21, 0.35), rgba(5, 8, 16, 0.12));
 }
@@ -710,6 +713,192 @@ textarea {
 
 .delta-source-badge small {
     color: rgba(244, 245, 251, 0.62);
+}
+
+.delta-flow-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 22px;
+    border: 1px solid rgba(194, 191, 255, 0.1);
+    background:
+        radial-gradient(circle at top left, rgba(80, 154, 255, 0.14), rgba(0, 0, 0, 0) 34%),
+        radial-gradient(circle at bottom right, rgba(40, 209, 122, 0.12), rgba(0, 0, 0, 0) 38%),
+        linear-gradient(135deg, rgba(12, 16, 30, 0.96), rgba(8, 12, 22, 0.92));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 24px 40px -34px rgba(0, 0, 0, 0.54);
+}
+
+.delta-flow-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.delta-flow-header h3 {
+    margin: 3px 0 0;
+    font-size: 1rem;
+    color: #f4f5fb;
+}
+
+.delta-flow-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    color: rgba(244, 245, 251, 0.7);
+    font-size: 0.84rem;
+}
+
+.delta-flow-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.delta-flow-legend i {
+    display: inline-flex;
+    width: 18px;
+    height: 2px;
+    border-radius: 999px;
+}
+
+.delta-flow-legend-base {
+    background: linear-gradient(90deg, rgba(96, 165, 250, 0.9), rgba(125, 211, 252, 0.9));
+}
+
+.delta-flow-legend-delta {
+    background: linear-gradient(90deg, rgba(248, 113, 113, 0.9), rgba(251, 146, 60, 0.9));
+}
+
+.delta-flow-legend-composed {
+    background: linear-gradient(90deg, rgba(52, 211, 153, 0.9), rgba(59, 130, 246, 0.9));
+}
+
+.delta-flow-legend small {
+    color: rgba(244, 245, 251, 0.5);
+}
+
+.delta-flow-canvas-wrap {
+    position: relative;
+    min-height: 640px;
+    border-radius: 22px;
+    overflow: hidden;
+    overscroll-behavior: none;
+    border: 1px solid rgba(194, 191, 255, 0.08);
+    background:
+        linear-gradient(180deg, rgba(3, 8, 16, 0.92), rgba(6, 10, 20, 0.96));
+}
+
+.delta-flow-canvas {
+    width: 100%;
+    height: 640px;
+    display: block;
+    cursor: grab;
+    touch-action: none;
+}
+
+.delta-flow-canvas:active {
+    cursor: grabbing;
+}
+
+.delta-flow-grid-line {
+    stroke: rgba(255, 255, 255, 0.06);
+    stroke-width: 0.025;
+}
+
+.delta-flow-grid-line-major {
+    stroke: rgba(255, 255, 255, 0.1);
+    stroke-width: 0.04;
+}
+
+.delta-flow-axis {
+    stroke: rgba(255, 255, 255, 0.16);
+    stroke-width: 0.055;
+}
+
+.delta-flow-unit-circle {
+    fill: rgba(255, 255, 255, 0.012);
+    stroke: rgba(194, 191, 255, 0.14);
+    stroke-width: 0.05;
+}
+
+.delta-flow-base-line,
+.delta-flow-delta-line,
+.delta-flow-composed-line {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: opacity 0.18s ease, stroke-width 0.18s ease;
+}
+
+.delta-flow-base-line {
+    stroke: rgba(96, 165, 250, 0.88);
+    stroke-width: 0.09;
+}
+
+.delta-flow-delta-line {
+    stroke: rgba(248, 113, 113, 0.9);
+    stroke-width: 0.08;
+}
+
+.delta-flow-composed-line {
+    stroke: rgba(52, 211, 153, 0.42);
+    stroke-width: 0.07;
+    stroke-dasharray: 0.22 0.18;
+}
+
+.delta-flow-anchor-dot {
+    fill: rgba(244, 245, 251, 0.68);
+}
+
+.delta-flow-end-dot {
+    fill: rgba(52, 211, 153, 0.92);
+}
+
+.delta-flow-hit {
+    fill: transparent;
+    cursor: pointer;
+}
+
+.delta-flow-label {
+    fill: rgba(244, 245, 251, 0.82);
+    font-size: 0.22px;
+    letter-spacing: 0.08em;
+}
+
+.delta-flow-sentence {
+    opacity: 0.78;
+    transition: opacity 0.18s ease;
+}
+
+.delta-flow-sentence:hover,
+.delta-flow-sentence-selected {
+    opacity: 1;
+}
+
+.delta-flow-sentence-selected .delta-flow-unit-circle {
+    stroke: rgba(96, 165, 250, 0.42);
+}
+
+.delta-flow-sentence-selected .delta-flow-base-line,
+.delta-flow-sentence-selected .delta-flow-delta-line,
+.delta-flow-sentence-selected .delta-flow-composed-line {
+    stroke-width: 0.11;
+}
+
+.delta-flow-empty {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 24px;
+    border-radius: 22px;
+    border: 1px solid rgba(194, 191, 255, 0.08);
+    background: rgba(10, 14, 26, 0.52);
+    color: rgba(244, 245, 251, 0.72);
 }
 
 .arc-toolbar-header {
@@ -1182,6 +1371,12 @@ textarea {
         writing-mode: initial;
         transform: none;
     }
+
+    .delta-flow-canvas-wrap,
+    .delta-flow-canvas {
+        min-height: 520px;
+        height: 520px;
+    }
 }
 
 @media (max-width: 720px) {
@@ -1222,6 +1417,12 @@ textarea {
 
     .delta-mode-grid {
         grid-template-columns: 1fr;
+    }
+
+    .delta-flow-canvas-wrap,
+    .delta-flow-canvas {
+        min-height: 420px;
+        height: 420px;
     }
 
     .preview-tab-bar {
