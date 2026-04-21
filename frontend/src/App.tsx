@@ -1248,11 +1248,7 @@ const App: React.FC = () => {
             <main className="workspace">
                 <header className="hero">
                     <div>
-                        <p className="eyebrow">Local sentence attention</p>
-                        <h1>SAVIS Attention Markdown</h1>
-                        <p className="hero-copy">
-                            A preview-first markdown workspace for seeing where the model concentrates, with sentence and token attention tucked behind the same reading surface.
-                        </p>
+                        <h1>Attention Markdown</h1>
                     </div>
 
                     <div className="hero-aside">

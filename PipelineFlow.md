@@ -336,3 +336,190 @@ This is the part people usually blur, so it is worth being precise.
 3. Sentence scores are driven by max pooling, so one strong head/layer/token link can dominate.
 4. The Rendered tab is a sentence-salience overlay, not a literal token-by-token depiction of the exact visible page.
 5. Because the model is causal, the visualization still mostly tells you which earlier text later text looks back to, even though the opportunity correction reduces the most obvious front-loaded bias.
+
+
+--------------------------
+
+
+DBMS integration:
+
+## Background
+
+The existing `DeltaTensorStore` captures per-layer, per-head tensors from every forward pass and writes them to memory-mapped `.npy` files in `/tmp`. The data is rich but ephemeral — it is discarded when the server restarts or when the user switches documents. The DBMS integration replaces this volatile temp-file approach with a persistent PostgreSQL + pgvector backend that makes all captured vectors searchable.
+
+---
+
+## What vectors we already have (from `delta_capture.py`)
+
+For every document analysis, per layer `l` (18 layers in Gemma-270M), the system captures:
+
+| Tensor Name | Shape | What it is |
+|---|---|---|
+| `residual_inputs` | `[L, T, H_dim]` | The hidden state entering each transformer block |
+| `attention_weights` | `[L, N_heads, T, T]` | The raw per-head attention matrix |
+| `value_states` | `[L, N_heads, T, head_dim]` | The projected value vectors before mixing |
+| `head_contexts` | `[L, N_heads, T, head_dim]` | The per-token output of each individual head (Av) |
+| `head_projected_deltas` | `[L, N_heads, T, H_dim]` | Each head's contribution projected into full residual space |
+| `attention_deltas_post_norm` | `[L, T, H_dim]` | The full layer attention output after layer norm |
+| `residual_after_attention` | `[L, T, H_dim]` | The residual stream state after attention block |
+
+> **Key insight:** Each row `[l, t, :]` in `residual_inputs` is a `H_dim`-dimensional vector representing a single token's full hidden state entering a specific transformer layer. These are exactly what we want to store and query.
+
+---
+
+## The Core DBMS Concept
+
+The proposal is a **Neural Vector Registry** — a PostgreSQL database that:
+
+1. **Stores** sentence-averaged residual and delta vectors from each layer and head.
+2. **Indexes** them using `pgvector`'s HNSW (Hierarchical Navigable Small World) approximate nearest-neighbour index.
+3. **Answers** queries of the form: *"Find all sentence embeddings in the database whose layer-2, head-3 head context vector is closest to this query vector."*
+
+This is fundamentally a **DBMS primitive** — a nearest-neighbour join on a high-dimensional relation — applied to a ML pipeline.
+
+---
+
+## Relational Schema
+
+```sql
+-- A document that was analyzed
+CREATE TABLE documents (
+    id          SERIAL PRIMARY KEY,
+    content_hash    TEXT UNIQUE NOT NULL,   -- SHA-256 of markdown text
+    model_name  TEXT NOT NULL,
+    token_count INT  NOT NULL,
+    layer_count INT  NOT NULL,
+    head_count  INT  NOT NULL,
+    hidden_size INT  NOT NULL,
+    head_dim    INT  NOT NULL,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- A single sentence extracted from a document
+CREATE TABLE sentences (
+    id              SERIAL PRIMARY KEY,
+    document_id     INT  REFERENCES documents(id) ON DELETE CASCADE,
+    sentence_index  INT  NOT NULL,
+    text            TEXT NOT NULL,
+    token_start     INT  NOT NULL,    -- inclusive
+    token_end       INT  NOT NULL,    -- exclusive
+    attention_score FLOAT,            -- opportunity-corrected W_j score
+    band            TEXT,             -- 'high' / 'medium' / 'low'
+    UNIQUE (document_id, sentence_index)
+);
+
+-- The core vector table: one row per (sentence, layer, vector_type)
+-- Stores sentence-averaged vectors for residual states and deltas
+CREATE TABLE sentence_vectors (
+    id              SERIAL PRIMARY KEY,
+    sentence_id     INT  REFERENCES sentences(id) ON DELETE CASCADE,
+    layer_index     INT  NOT NULL,
+    vector_type     TEXT NOT NULL,   -- 'residual_input' | 'residual_after_attn' | 'attn_delta_post_norm'
+    embedding       VECTOR(1152)     -- hidden_size for Gemma-270M
+);
+
+-- Per-head vector table: one row per (sentence, layer, head, vector_type)
+-- Stores head-specific context and projected delta vectors
+CREATE TABLE sentence_head_vectors (
+    id              SERIAL PRIMARY KEY,
+    sentence_id     INT  REFERENCES sentences(id) ON DELETE CASCADE,
+    layer_index     INT  NOT NULL,
+    head_index      INT  NOT NULL,
+    vector_type     TEXT NOT NULL,   -- 'head_context' | 'value_state' | 'projected_delta'
+    embedding       VECTOR(64)       -- head_dim for Gemma-270M
+);
+
+-- HNSW Indexes for ANN search
+CREATE INDEX ON sentence_vectors        USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX ON sentence_head_vectors   USING hnsw (embedding vector_cosine_ops);
+```
+
+### Why Sentence-Averaged?
+
+Storing every token individually would produce `L * T * H_dim` float16 values per document — gigabytes per document. Instead, tokens belonging to each sentence (using `token_start:token_end` bounds already computed by SAVIS) are **mean-pooled** into a single representative vector before insertion. This brings the storage down to `N_sentences * L * 3` rows in `sentence_vectors`, which is entirely manageable.
+
+---
+
+## Query Examples (The Academic Payoff)
+
+### Q1: Find the sentences whose layer-2 residual state is closest to a given sentence
+```sql
+SELECT
+    s.text,
+    d.model_name,
+    sv.embedding <=> %(query_vec)s AS cosine_distance
+FROM sentence_vectors sv
+JOIN sentences s ON sv.sentence_id = s.id
+JOIN documents d ON s.document_id = d.id
+WHERE sv.layer_index = 2
+  AND sv.vector_type = 'residual_input'
+ORDER BY cosine_distance ASC
+LIMIT 10;
+```
+
+### Q2: Find all sentences where head 3 of layer 2 produced a head_context vector closest to a query vector (the exact use-case you described)
+```sql
+SELECT
+    s.text,
+    s.attention_score,
+    shv.embedding <=> %(query_vec)s AS distance
+FROM sentence_head_vectors shv
+JOIN sentences s ON shv.sentence_id = s.id
+WHERE shv.layer_index = 2
+  AND shv.head_index  = 3
+  AND shv.vector_type = 'head_context'
+ORDER BY distance ASC
+LIMIT 10;
+```
+
+### Q3: Cross-layer drift — find sentences where the residual state changed the most between layer 0 and the final layer (uses a window function join)
+```sql
+WITH early AS (
+    SELECT sentence_id, embedding AS e0 FROM sentence_vectors
+    WHERE layer_index = 0 AND vector_type = 'residual_input'
+),
+late AS (
+    SELECT sentence_id, embedding AS eN FROM sentence_vectors
+    WHERE layer_index = (SELECT MAX(layer_index) FROM sentence_vectors)
+      AND vector_type = 'residual_after_attn'
+)
+SELECT s.text, 1 - (e.e0 <=> l.eN) AS cosine_similarity
+FROM early e
+JOIN late l  ON e.sentence_id = l.sentence_id
+JOIN sentences s ON s.id = e.sentence_id
+ORDER BY cosine_similarity ASC
+LIMIT 10;
+```
+
+This query finds sentences where the residual stream **drifted most** from the input to the output — a direct measure of how much attention transformed that sentence's representation.
+
+---
+
+## New API Endpoints to Add
+
+```
+POST /vectors/ingest          — Run analysis + ingest vectors for a document
+POST /vectors/search          — ANN search given a query sentence and params
+GET  /vectors/layers/{doc_id} — Retrieve all layer vectors for a document (for UI)
+```
+
+The `/vectors/search` endpoint accepts:
+- `query_text`: a sentence string to embed and search with
+- `layer_index`: which layer to search in
+- `head_index` (optional): if provided, searches `sentence_head_vectors`
+- `vector_type`: which tensor type to compare against
+- `limit`: top-k results
+
+## Academic Talking Points for DBMS Course
+
+| Concept | Where it appears |
+|---|---|
+| **3NF Relational Design** | `documents` → `sentences` → `sentence_vectors` decomposition |
+| **Foreign Key Constraints + Cascades** | `ON DELETE CASCADE` throughout the hierarchy |
+| **Composite Unique Constraints** | `UNIQUE(document_id, sentence_index)` |
+| **High-Dimensional Indexing** | HNSW index instead of B-tree, and why B-tree fails for vectors |
+| **Approximate Nearest Neighbour** | Why exact KNN is O(N*D) and HNSW gives O(log N) |
+| **Aggregation & Window Functions** | Cross-layer drift query using CTE + self-join |
+| **Vector Operators** | `<=>` cosine distance, `<->` L2, `<#>` inner product — and when to use which |
+| **Idempotent Ingestion** | `ON CONFLICT DO NOTHING` via `content_hash` |
+| **Connection Pooling** | `asyncpg` + FastAPI lifespan for the DBMS course |

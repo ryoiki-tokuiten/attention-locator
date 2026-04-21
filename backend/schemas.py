@@ -148,3 +148,75 @@ class DeltaVisualizationResponse(BaseModel):
     globalTopEdges: list[DeltaGlobalEdgeResponse] = Field(default_factory=list)
     vectorFlow: DeltaVectorFlowResponse
     warnings: list[str] = Field(default_factory=list)
+
+
+# ── Vector Store Schemas ───────────────────────────────────────────────────────
+
+class VectorIngestRequest(AnalyzeRequest):
+    """Triggers delta capture + DB ingestion for the given markdown."""
+    pass
+
+
+class VectorIngestResponse(BaseModel):
+    documentId: int
+    contentHash: str
+    sentenceCount: int
+    layerCount: int
+    vectorsInserted: int
+
+
+class VectorSearchRequest(BaseModel):
+    text: str = Field(description="Source markdown document.")
+    sentenceIndex: int = Field(ge=0, description="Which sentence to use as the query vector.")
+    sourceLayer: int = Field(ge=0, description="Which layer to take the query vector from.")
+    targetLayer: int = Field(ge=0, description="Which layer to search in.")
+    vectorType: Literal["residual_input", "residual_after_attn"] = "residual_after_attn"
+    limit: int = Field(default=10, ge=1, le=100)
+
+
+class VectorSearchResult(BaseModel):
+    sentenceId: int
+    sentenceText: str
+    sentenceIndex: int
+    attentionScore: float | None
+    band: str | None
+    documentId: int
+    contentHash: str
+    modelName: str
+    layerIndex: int
+    cosineDistance: float
+
+
+class VectorSearchResponse(BaseModel):
+    queryText: str
+    sourceLayer: int
+    targetLayer: int
+    vectorType: str
+    results: list[VectorSearchResult]
+
+
+class LayerDriftEntry(BaseModel):
+    fromLayer: int
+    toLayer: int
+    cosineSimilarity: float
+
+
+class LayerDriftResponse(BaseModel):
+    sentenceId: int
+    sentenceText: str
+    drift: list[LayerDriftEntry]
+
+
+class DocumentLayerStateEntry(BaseModel):
+    sentenceId: int
+    sentenceIndex: int
+    text: str
+    attentionScore: float | None
+    band: str | None
+    layerIndex: int
+
+
+class DocumentLayerStatesResponse(BaseModel):
+    documentId: int
+    vectorType: str
+    states: list[DocumentLayerStateEntry]
