@@ -45,7 +45,9 @@ def _mean_pool(array: np.ndarray, start: int, end: int) -> np.ndarray:
     span = array[start:end]
     if span.shape[0] == 0:
         return np.zeros(array.shape[-1], dtype=np.float32)
-    return span.mean(axis=0).astype(np.float32)
+    res = span.mean(axis=0).astype(np.float32)
+    # Sanitize inf/nan which pgvector rejects
+    return np.nan_to_num(res, nan=0.0, posinf=0.0, neginf=0.0)
 
 
 def _pad_to_dim(vec: np.ndarray, target_dim: int) -> np.ndarray:

@@ -523,3 +523,176 @@ The `/vectors/search` endpoint accepts:
 | **Vector Operators** | `<=>` cosine distance, `<->` L2, `<#>` inner product — and when to use which |
 | **Idempotent Ingestion** | `ON CONFLICT DO NOTHING` via `content_hash` |
 | **Connection Pooling** | `asyncpg` + FastAPI lifespan for the DBMS course |
+
+---
+
+# Concepts of DAA (Data Structures and Algorithms) Used
+
+The integration of the SAVIS (Self-Attention Visualizer) pipeline with the persistent neural registry is heavily grounded in classical and modern Data Structures and Algorithms (DAA). The codebase orchestrates a complex pipeline that transforms unstructured markdown text into high-dimensional vector representations, leveraging optimal data structures to guarantee performance, modularity, and scalability. 
+
+
+## 1. High-Dimensional Graph Search (Hierarchical Navigable Small World - HNSW)
+
+**Concept:** Approximate Nearest Neighbor (ANN) Search, Graph Data Structures
+**Location:** `backend/schema.sql`
+
+When scaling vector databases, exact K-Nearest Neighbors (KNN) requires an exhaustive scan of the database, yielding an unacceptable time complexity of $O(N \times D)$ where $N$ is the number of vectors and $D$ is the dimensionality (1536 in our schema). 
+
+To solve this, the infrastructure employs **HNSW (Hierarchical Navigable Small World)** graphs, implemented natively via `pgvector`. 
+
+```sql
+-- HNSW index for approximate nearest-neighbour search using cosine distance.
+-- m=16 and ef_construction=64 are the pgvector defaults; good for most workloads.
+CREATE INDEX IF NOT EXISTS idx_sentence_layer_states_hnsw
+    ON sentence_layer_states
+    USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
+```
+
+**Algorithmic Deep Dive:**
+HNSW is a multi-layered proximity graph. 
+- **Data Structure:** The bottom layer contains all vectors. Higher layers contain exponentially fewer vectors (like a skip list). Nodes are connected to their nearest neighbors.
+- **Search Algorithm:** The search starts at the top (sparsest) layer, greedily traversing towards the query vector. Once a local minimum is reached, the search drops to the next denser layer, repeating until the base layer is reached.
+- **Complexity:** Reduces the search complexity from $O(N \times D)$ to **$O(\log N)$**.
+- **Distance Metric:** We use `vector_cosine_ops` (`<=>` operator in PostgreSQL), which calculates the cosine distance $1 - \frac{A \cdot B}{||A|| ||B||}$.
+
+## 2. Dynamic Programming / Memoization for State Management
+
+**Concept:** Memoization, Caching, Overlapping Subproblems
+**Location:** `backend/analysis.py` (`_cached_state`, `_cached_delta_capture`)
+
+Extracting full causal self-attention matrices from a Transformer is extraordinarily expensive. The time complexity of self-attention is $O(L \times H \times T^2)$, where $L$ is layers, $H$ is heads, and $T$ is the number of tokens. For large documents, this computation easily dominates the pipeline.
+
+**Implementation:**
+The `FullContextSAVISAnalyzer` class implements strict memoization to avoid recomputing the $O(T^2)$ matrices if the user requests different views of the exact same text.
+
+```python
+def _compute_state(self, markdown_text: str) -> SAVISDocumentState:
+    prepared_text = markdown_text.replace("\r\n", "\n").replace("\r", "\n")
+    
+    # Memoization hit: Return cached $O(T^2)$ tensor computations
+    if self._cached_state and self._cached_state.cache_key == prepared_text:
+        return self._cached_state
+        
+    # Memoization miss: Evict old cache, free GPU VRAM, compute new
+    if self._cached_state is not None:
+        self._cached_state = None
+        self._release_inference_memory()
+        
+    # ... heavy torch model inference ...
+```
+
+**Algorithmic Deep Dive:**
+By storing the complex `SAVISDocumentState` (which acts as a memoization table), the frontend can rapid-fire requests (e.g., swapping between token view and sentence view) in $O(1)$ amortized time instead of triggering $O(T^2)$ GPU recalculations.
+
+## 3. Dimensionality Reduction via Mean Pooling (Aggregation Algorithms)
+
+**Concept:** Vector Aggregation, Matrix Slicing
+**Location:** `backend/vector_store.py` (`_mean_pool`)
+
+The raw tensor output for a document is shaped `[L, T, D]`. Storing every single token (`T`) would explode the database size. The algorithm reduces this by pooling token vectors into sentence boundaries $O(K \times D)$, where $K$ is the number of tokens in a specific sentence.
+
+```python
+def _mean_pool(array: np.ndarray, start: int, end: int) -> np.ndarray:
+    """
+    Mean-pool rows [start:end] of `array` along axis 0.
+    Returns a 1-D float32 vector of shape (array.shape[-1],).
+    """
+    span = array[start:end]
+    if span.shape[0] == 0:
+        return np.zeros(array.shape[-1], dtype=np.float32)
+    res = span.mean(axis=0).astype(np.float32)
+    # Sanitize inf/nan which pgvector rejects
+    return np.nan_to_num(res, nan=0.0, posinf=0.0, neginf=0.0)
+```
+
+**Algorithmic Deep Dive:**
+- Slicing `array[start:end]` is a constant-time $O(1)$ view operation in numpy.
+- The `.mean(axis=0)` iterates over the $K$ rows, executing in $O(K \times D)$ time.
+- This creates a massive memory optimization, converting an $O(T)$ storage requirement into an $O(S)$ requirement (where $S$ is the number of sentences, $S \ll T$).
+
+## 4. O(N log N) Sorting and Adaptive Selection
+
+**Concept:** Sorting Algorithms, Percentile Calculation
+**Location:** `backend/analysis.py` (`percentile`, `assign_score_bands`)
+
+To visually color sentences on the frontend, the system doesn't use static thresholds (which fail if the model's attention distribution is flat). Instead, it dynamically calculates percentile cutoffs using a sorting algorithm.
+
+```python
+def percentile(values: Sequence[float], ratio: float) -> float:
+    if not values:
+        return 0.0
+
+    ordered = sorted(values) # O(N log N)
+    position = (len(ordered) - 1) * ratio
+    lower_index = floor(position)
+    upper_index = ceil(position)
+
+    if lower_index == upper_index:
+        return ordered[lower_index]
+
+    # Linear interpolation
+    progress = position - lower_index
+    lower_value = ordered[lower_index]
+    upper_value = ordered[upper_index]
+    return lower_value + ((upper_value - lower_value) * progress)
+```
+
+**Algorithmic Deep Dive:**
+The `sorted(values)` call utilizes Python's Timsort algorithm. Timsort is a hybrid sorting algorithm derived from merge sort and insertion sort, giving a worst-case and average-case time complexity of **$O(N \log N)$**. This allows the system to establish statistical boundaries (e.g., 78th percentile for 'high' band, 38th for 'medium') robustly, no matter the length of the document.
+
+## 5. Tensor Algebra and Matrix Multiplication (Einsum)
+
+**Concept:** Linear Algebra, Optimized Hardware Operations
+**Location:** `backend/analysis.py` (Inside `build_attention_hook`)
+
+When intercepting transformer layers to calculate `head_projected_delta`, the system avoids naive iterative nested loops and utilizes highly optimized Einstein summation (`torch.einsum`).
+
+```python
+head_projected_delta = self.torch.einsum(
+    "bthd,hod->btho",
+    head_context,
+    projection_blocks,
+).contiguous()
+```
+
+**Algorithmic Deep Dive:**
+Naive matrix multiplication has a complexity of $O(N^3)$. `torch.einsum` evaluates the algebraic notation and delegates to highly optimized BLAS (Basic Linear Algebra Subprograms) libraries on the CPU or cuBLAS on the GPU. It optimizes memory access patterns, maximizes cache locality, and leverages SIMD/Tensor cores, reducing the hidden constant factors drastically while processing the 4D tensors `[batch, token, head, dim]`.
+
+## 6. O(1) Hash-based Idempotency
+
+**Concept:** Cryptographic Hashing, Set/Existence Checking
+**Location:** `backend/vector_store.py` (`compute_content_hash`)
+
+Database insertions must be idempotent so that re-analyzing the same document doesn't duplicate vectors.
+
+```python
+def compute_content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+```
+
+This pairs with the SQL UPSERT algorithm:
+```sql
+ON CONFLICT (content_hash) DO UPDATE
+```
+
+**Algorithmic Deep Dive:**
+- SHA-256 processes the string in $O(N)$ time where $N$ is the string length.
+- The resulting hash is indexed in the PostgreSQL B-Tree (`content_hash TEXT UNIQUE NOT NULL`).
+- Checking if a document already exists becomes an **$O(\log M)$** B-Tree lookup (or effectively $O(1)$ if hash indexed), preventing $O(M)$ sequential scans across $M$ stored documents.
+
+## 7. The Algorithmic Pipeline Flow
+
+The entire architecture is modularized into a strict, unidirectional data structure pipeline:
+
+1. **Input Phase:** Raw Text $\rightarrow$ $O(N)$ Normalization $\rightarrow$ SHA-256 Hashing.
+2. **Tokenizer Phase:** Text mapped to Integer Array of tokens (BPE/SentencePiece algorithm).
+3. **Inference Phase (The Bottleneck):** $O(T^2 \cdot L \cdot H)$ Forward pass generating intermediate state tensors.
+4. **Hook Phase:** Extracting $O(T \cdot D)$ residual states per layer via PyTorch hooks.
+5. **Alignment Phase:** $O(T)$ linear scan mapping sentence strings back to source offsets (`sentence_source_offsets`).
+6. **Scoring Phase:** $O(S^2)$ reduction of Token Attention Matrices into Sentence Attention Matrices, followed by Opportunity Correction.
+7. **Banding Phase:** $O(S \log S)$ Timsort to assign visual heat bands.
+8. **Pooling Phase:** $O(S \cdot K \cdot D)$ Mean-pooling token deltas into sentence representations.
+9. **Persistence Phase:** Database bulk-insert and $O(\log M)$ graph insertion into the HNSW index.
+
+This modular pipeline perfectly isolates computational boundaries. The math engine (`analysis.py`), the state storage (`delta_capture.py`), and the persistence layer (`vector_store.py`) act as independent algorithmic nodes, passing heavily optimized, serialized data structures between each other.
