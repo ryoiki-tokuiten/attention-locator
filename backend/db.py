@@ -7,8 +7,6 @@ Uses asyncpg with pgvector codec registration.
 from __future__ import annotations
 
 import os
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import asyncpg
 from pgvector.asyncpg import register_vector
@@ -45,20 +43,3 @@ async def create_pool() -> asyncpg.Pool:
         max_size=DB_MAX_CONN,
         init=_init_connection,
     )
-
-
-@asynccontextmanager
-async def lifespan_pool() -> AsyncGenerator[asyncpg.Pool, None]:
-    """
-    Async context manager for use in FastAPI lifespan.
-
-    Usage:
-        async with lifespan_pool() as pool:
-            app.state.db_pool = pool
-            yield
-    """
-    pool = await create_pool()
-    try:
-        yield pool
-    finally:
-        await pool.close()

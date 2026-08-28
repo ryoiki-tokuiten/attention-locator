@@ -12,9 +12,6 @@ export interface SemanticWeight {
 
 export interface HealthPayload {
     ready: boolean;
-    modelName: string;
-    device: string;
-    maxInputTokens?: number | null;
     error: string | null;
 }
 

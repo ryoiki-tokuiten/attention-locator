@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import numpy as np
+import torch
 
 from backend.delta_capture import (
     DeltaCaptureMetadata,
@@ -55,7 +56,6 @@ DEFAULT_MODEL_NAME = discover_default_model_name()
 class SAVISDocumentState:
     cache_key: str
     analysis_text: str
-    prepared_text: str
     token_count: int
     sentences: list[str]
     raw_scores: list[float]
@@ -64,7 +64,6 @@ class SAVISDocumentState:
     tokens: list[str]
     token_attention: Any
     sentence_boundaries_ids: list[int]
-    sentence_source_offsets: list[tuple[int | None, int | None]]
     warnings: list[str]
 
 
@@ -307,27 +306,20 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS,
         max_delta_visualization_tokens: int = DEFAULT_MAX_DELTA_VISUALIZATION_TOKENS,
     ) -> None:
-        from backend.savis import Attention, ISA
+        from backend.savis import Attention
 
         self.model_name = model_name
         self.max_input_tokens = max_input_tokens
         self.max_delta_visualization_tokens = max_delta_visualization_tokens
-        self.torch = self._import_torch()
         self.attention_backend = Attention(model_name, attn_implementation="eager")
         self.device = self.attention_backend.device
-        self.isa_class = ISA
         self._cached_state: SAVISDocumentState | None = None
         self._cached_delta_capture: DeltaCaptureMetadata | None = None
 
-    def _import_torch(self):
-        import torch
-
-        return torch
-
     def _release_inference_memory(self) -> None:
         gc.collect()
-        if self.device == "cuda" and self.torch.cuda.is_available():
-            self.torch.cuda.empty_cache()
+        if self.device == "cuda" and torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def _clear_cached_delta_capture(self) -> None:
         if self._cached_delta_capture is None:
@@ -339,7 +331,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         self._cached_delta_capture = None
 
     def _has_non_finite_tensor_values(self, tensor: Any) -> bool:
-        return bool(hasattr(tensor, "numel") and tensor.numel() and not self.torch.isfinite(tensor).all().item())
+        return bool(hasattr(tensor, "numel") and tensor.numel() and not torch.isfinite(tensor).all().item())
 
     def compute_raw_scores(self, sentences: Sequence[str]) -> Sequence[float]:
         if not sentences:
@@ -393,7 +385,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         y_end = sentence_boundaries[sentence_y_index + 1]
 
         subset_non_finite = self._has_non_finite_tensor_values(state.token_attention)
-        attention_subset = self.torch.nan_to_num(
+        attention_subset = torch.nan_to_num(
             state.token_attention[y_start:y_end, x_start:x_end],
             nan=0.0,
             posinf=1.0,
@@ -564,18 +556,18 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
                     key_value_groups,
                 )
 
-                head_context = self.torch.matmul(attn_weights, value_states).transpose(1, 2).contiguous()
+                head_context = torch.matmul(attn_weights, value_states).transpose(1, 2).contiguous()
                 projection_blocks = attention_module.o_proj.weight.reshape(
                     attention_module.o_proj.out_features,
                     module_head_count,
                     attention_module.head_dim,
                 ).permute(1, 0, 2).contiguous()
-                projected_value_states = self.torch.einsum(
+                projected_value_states = torch.einsum(
                     "bhtd,hod->bhto",
                     value_states,
                     projection_blocks,
                 ).contiguous()
-                head_projected_delta = self.torch.einsum(
+                head_projected_delta = torch.einsum(
                     "bthd,hod->btho",
                     head_context,
                     projection_blocks,
@@ -609,7 +601,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
             forward_kwargs: dict[str, Any] = {}
             if getattr(self.attention_backend, "model_family", None) == "causal":
                 forward_kwargs["use_cache"] = False
-            with self.torch.no_grad():
+            with torch.no_grad():
                 model(**model_inputs, **forward_kwargs)
         except RuntimeError as exc:
             store.cleanup()
@@ -673,7 +665,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
             prepared_text,
             state.sentence_payloads,
             state.sentence_boundaries_ids,
-            self.torch,
+            torch,
             self.device,
         )
         combined_warnings = list(dict.fromkeys([
@@ -688,6 +680,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         self,
         markdown_text: str,
     ) -> SAVISDocumentState:
+        from backend.savis import ISA
         from backend.savis.attention import map_sentences_to_source_offsets, sentence_tokenize_text
 
         prepared_text = markdown_text.replace("\r\n", "\n").replace("\r", "\n")
@@ -704,12 +697,10 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
 
         try:
             (
-                _prepared_text,
                 token_count,
                 attentions,
                 tokenizer,
                 input_ids,
-                _outputs,
                 sequences,
             ) = self.attention_backend.get_attention_for_document(
                 prepared_text,
@@ -724,18 +715,18 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
                 ) from exc
             raise
 
-        isa = self.isa_class(sequences, attentions, tokenizer, source_text=prepared_text)
+        isa = ISA(sequences, attentions, tokenizer, source_text=prepared_text)
         token_attention_tensor = isa.head_attentions[0].max(dim=0).values.detach().cpu()
         sentence_attention_tensor = isa.sentence_attention.detach().cpu()
         had_non_finite_token_attention = self._has_non_finite_tensor_values(token_attention_tensor)
         had_non_finite_sentence_attention = self._has_non_finite_tensor_values(sentence_attention_tensor)
-        token_attention_tensor = self.torch.nan_to_num(
+        token_attention_tensor = torch.nan_to_num(
             token_attention_tensor,
             nan=0.0,
             posinf=1.0,
             neginf=0.0,
         ).clamp(min=0.0, max=1.0)
-        sentence_attention_tensor = self.torch.nan_to_num(
+        sentence_attention_tensor = torch.nan_to_num(
             sentence_attention_tensor,
             nan=0.0,
             posinf=1.0,
@@ -793,7 +784,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
             raw_scores = compute_opportunity_corrected_sentence_scores(
                 trimmed_attention,
                 sentence_boundaries_ids[:usable_count + 1],
-                self.torch,
+                torch,
             )
 
         sentence_payloads = self._build_sentence_payloads(
@@ -812,7 +803,6 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         state = SAVISDocumentState(
             cache_key=prepared_text,
             analysis_text=prepared_text,
-            prepared_text=prepared_text,
             token_count=token_count,
             sentences=resolved_sentences,
             raw_scores=raw_scores,
@@ -821,7 +811,6 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
             tokens=tokens,
             token_attention=token_attention_tensor,
             sentence_boundaries_ids=sentence_boundaries_ids,
-            sentence_source_offsets=sentence_source_offsets,
             warnings=warnings,
         )
         self._cached_state = state

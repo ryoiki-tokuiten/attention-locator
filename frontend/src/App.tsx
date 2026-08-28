@@ -2,8 +2,9 @@ import React, { startTransition, useDeferredValue, useEffect, useMemo, useRef, u
 import { Compass, FileText, GitBranch, Globe, LoaderCircle, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, SwatchBook, Target } from 'lucide-react';
 
 import { GlobalImagePreviewModal, RenderMathMarkdown, type AttentionArcConnection } from '../RenderMathMarkdown';
-import AttentionExplorer, { attentionColorForWeight, type AttentionTab } from './AttentionExplorer';
+import AttentionExplorer, { type AttentionTab } from './AttentionExplorer';
 import DeltaVectorFlowCanvas from './DeltaVectorFlowCanvas';
+import { asFiniteNumber, attentionColorForWeight, clamp } from './utils';
 import type {
     DeltaVisualizationMode,
     DeltaVisualizationPayload,
@@ -29,6 +30,24 @@ This prototype renders markdown with sentence-level attention emphasis and lets 
 
 Inline math still works: $ISA(S_a, S_b) = \\max_{h \\in H} \\beta_h(S_a, S_b)$.
 `;
+
+async function postJson(path: string, body: unknown, signal: AbortSignal, errorLabel: string): Promise<unknown> {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal,
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.json().catch(() => null) as { detail?: string } | null;
+        throw new Error(errorBody?.detail || `${errorLabel} with status ${response.status}`);
+    }
+
+    return response.json();
+}
 
 const VIEW_TABS: Array<{ id: AttentionTab; label: string }> = [
     { id: 'rendered', label: 'Rendered' },
@@ -78,15 +97,6 @@ type RenderSurfaceMode = typeof RENDER_SURFACE_MODES[number]['id'];
 
 type RenderArcMode = 'off' | 'manual' | 'focused' | 'global';
 
-function clamp(value: number, min = 0, max = 1) {
-    return Math.min(max, Math.max(min, value));
-}
-
-function asFiniteNumber(value: unknown, fallback = 0) {
-    const numeric = typeof value === 'number' ? value : Number(value);
-    return Number.isFinite(numeric) ? numeric : fallback;
-}
-
 function asString(value: unknown, fallback = '') {
     return typeof value === 'string' ? value : fallback;
 }
@@ -98,12 +108,24 @@ function asStringArray(value: unknown): string[] {
     return value.map((item) => asString(item)).filter(Boolean);
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' ? value as Record<string, unknown> : {};
+}
+
+function asNullableFiniteNumber(value: unknown): number | null {
+    return value == null ? null : asFiniteNumber(value, 0);
+}
+
+function asDistanceBucket(value: unknown): 'local' | 'medium' | 'global' {
+    return value === 'local' || value === 'medium' || value === 'global' ? value : 'local';
+}
+
 function asSemanticBand(value: unknown): SemanticBand {
     return value === 'high' || value === 'medium' || value === 'low' ? value : 'medium';
 }
 
 function sanitizeSemanticWeight(item: unknown, fallbackIndex: number): SemanticWeight {
-    const candidate = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+    const candidate = asRecord(item);
     const sentence = asString(candidate.sentence);
     const normalizedSentence = asString(candidate.normalizedSentence, sentence.trim().toLowerCase());
 
@@ -113,8 +135,8 @@ function sanitizeSemanticWeight(item: unknown, fallbackIndex: number): SemanticW
         normalizedSentence,
         weight: clamp(asFiniteNumber(candidate.weight, 0.5)),
         band: asSemanticBand(candidate.band),
-        sourceStart: candidate.sourceStart == null ? null : asFiniteNumber(candidate.sourceStart, 0),
-        sourceEnd: candidate.sourceEnd == null ? null : asFiniteNumber(candidate.sourceEnd, 0),
+        sourceStart: asNullableFiniteNumber(candidate.sourceStart),
+        sourceEnd: asNullableFiniteNumber(candidate.sourceEnd),
     };
 }
 
@@ -126,7 +148,7 @@ function sanitizeSemanticWeights(payload: unknown): SemanticWeight[] {
     return payload.map((item, index) => sanitizeSemanticWeight(item, index));
 }
 
-function sanitizeAttentionMatrix(payload: unknown) {
+function sanitizeNumericMatrix(payload: unknown) {
     if (!Array.isArray(payload)) {
         return [];
     }
@@ -139,7 +161,7 @@ function sanitizeAttentionMatrix(payload: unknown) {
 }
 
 function sanitizeDocumentAttentionPayload(payload: unknown): DocumentAttentionPayload {
-    const candidate = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    const candidate = asRecord(payload);
     const sentenceWeights = sanitizeSemanticWeights(candidate.sentenceWeights);
 
     return {
@@ -147,13 +169,13 @@ function sanitizeDocumentAttentionPayload(payload: unknown): DocumentAttentionPa
         tokenCount: asFiniteNumber(candidate.tokenCount, 0),
         sentenceCount: asFiniteNumber(candidate.sentenceCount, sentenceWeights.length),
         sentenceWeights,
-        sentenceAttention: sanitizeAttentionMatrix(candidate.sentenceAttention),
+        sentenceAttention: sanitizeNumericMatrix(candidate.sentenceAttention),
         warnings: asStringArray(candidate.warnings),
     };
 }
 
 function sanitizeSentencePairAttentionPayload(payload: unknown): SentencePairAttentionPayload {
-    const candidate = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    const candidate = asRecord(payload);
 
     return {
         sentenceXIndex: asFiniteNumber(candidate.sentenceXIndex, 0),
@@ -162,7 +184,7 @@ function sanitizeSentencePairAttentionPayload(payload: unknown): SentencePairAtt
         sentenceY: asString(candidate.sentenceY),
         columnTokens: asStringArray(candidate.columnTokens),
         rowTokens: asStringArray(candidate.rowTokens),
-        attention: sanitizeAttentionMatrix(candidate.attention),
+        attention: sanitizeNumericMatrix(candidate.attention),
         warnings: asStringArray(candidate.warnings),
     };
 }
@@ -174,10 +196,11 @@ function asDeltaMode(value: unknown): DeltaVisualizationMode {
 }
 
 function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualizationPayload {
-    const candidate = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    const candidate = asRecord(payload);
     const sentences = Array.isArray(candidate.sentences) ? candidate.sentences : [];
     const globalTopEdges = Array.isArray(candidate.globalTopEdges) ? candidate.globalTopEdges : [];
-    const driftByLayer = Array.isArray(candidate.driftByLayer) ? candidate.driftByLayer : [];
+    const vectorFlow = asRecord(candidate.vectorFlow);
+    const vectorFlowBounds = asRecord(vectorFlow.bounds);
 
     return {
         analysisText: asString(candidate.analysisText),
@@ -188,14 +211,15 @@ function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualization
         hiddenSize: asFiniteNumber(candidate.hiddenSize, 0),
         defaultMode: asDeltaMode(candidate.defaultMode),
         sentences: sentences.map((item, index) => {
-            const sentenceCandidate = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+            const sentenceCandidate = asRecord(item);
             const topSources = Array.isArray(sentenceCandidate.topSources) ? sentenceCandidate.topSources : [];
+            const vectorFlowCandidate = asRecord(sentenceCandidate.vectorFlow);
             return {
                 index: asFiniteNumber(sentenceCandidate.index, index),
                 sentence: asString(sentenceCandidate.sentence),
                 displaySentence: asString(sentenceCandidate.displaySentence, asString(sentenceCandidate.sentence)),
-                sourceStart: sentenceCandidate.sourceStart == null ? null : asFiniteNumber(sentenceCandidate.sourceStart, 0),
-                sourceEnd: sentenceCandidate.sourceEnd == null ? null : asFiniteNumber(sentenceCandidate.sourceEnd, 0),
+                sourceStart: asNullableFiniteNumber(sentenceCandidate.sourceStart),
+                sourceEnd: asNullableFiniteNumber(sentenceCandidate.sourceEnd),
                 visible: Boolean(sentenceCandidate.visible),
                 incomingFlow: asFiniteNumber(sentenceCandidate.incomingFlow, 0),
                 incomingFlowNorm: clamp(asFiniteNumber(sentenceCandidate.incomingFlowNorm, 0)),
@@ -208,26 +232,23 @@ function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualization
                 peakLayerRatio: clamp(asFiniteNumber(sentenceCandidate.peakLayerRatio, 0)),
                 vectorFlow: sentenceCandidate.vectorFlow && typeof sentenceCandidate.vectorFlow === 'object'
                     ? {
-                        anchorX: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).anchorX, 0),
-                        anchorY: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).anchorY, 0),
-                        sentenceEndX: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).sentenceEndX, 0),
-                        sentenceEndY: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).sentenceEndY, 0),
-                        updatedEndX: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).updatedEndX, 0),
-                        updatedEndY: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).updatedEndY, 0),
-                        sentenceAngle: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).sentenceAngle, 0),
-                        deltaAngle: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).deltaAngle, 0),
-                        deltaRelativeAngle: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).deltaRelativeAngle, 0),
-                        composedAngle: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).composedAngle, 0),
-                        sentenceMagnitude: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).sentenceMagnitude, 0),
-                        deltaMagnitude: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).deltaMagnitude, 0),
-                        composedMagnitude: asFiniteNumber((sentenceCandidate.vectorFlow as Record<string, unknown>).composedMagnitude, 0),
+                        anchorX: asFiniteNumber(vectorFlowCandidate.anchorX, 0),
+                        anchorY: asFiniteNumber(vectorFlowCandidate.anchorY, 0),
+                        sentenceEndX: asFiniteNumber(vectorFlowCandidate.sentenceEndX, 0),
+                        sentenceEndY: asFiniteNumber(vectorFlowCandidate.sentenceEndY, 0),
+                        updatedEndX: asFiniteNumber(vectorFlowCandidate.updatedEndX, 0),
+                        updatedEndY: asFiniteNumber(vectorFlowCandidate.updatedEndY, 0),
+                        sentenceAngle: asFiniteNumber(vectorFlowCandidate.sentenceAngle, 0),
+                        deltaAngle: asFiniteNumber(vectorFlowCandidate.deltaAngle, 0),
+                        deltaRelativeAngle: asFiniteNumber(vectorFlowCandidate.deltaRelativeAngle, 0),
+                        composedAngle: asFiniteNumber(vectorFlowCandidate.composedAngle, 0),
+                        sentenceMagnitude: asFiniteNumber(vectorFlowCandidate.sentenceMagnitude, 0),
+                        deltaMagnitude: asFiniteNumber(vectorFlowCandidate.deltaMagnitude, 0),
+                        composedMagnitude: asFiniteNumber(vectorFlowCandidate.composedMagnitude, 0),
                     }
                     : null,
                 topSources: topSources.map((source, sourceIndex) => {
-                    const sourceCandidate = source && typeof source === 'object' ? source as Record<string, unknown> : {};
-                    const distanceBucket = sourceCandidate.distanceBucket === 'local' || sourceCandidate.distanceBucket === 'medium' || sourceCandidate.distanceBucket === 'global'
-                        ? sourceCandidate.distanceBucket
-                        : 'local';
+                    const sourceCandidate = asRecord(source);
 
                     return {
                         sourceIndex: asFiniteNumber(sourceCandidate.sourceIndex, sourceIndex),
@@ -235,26 +256,19 @@ function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualization
                         scoreNorm: clamp(asFiniteNumber(sourceCandidate.scoreNorm, 0)),
                         share: clamp(asFiniteNumber(sourceCandidate.share, 0)),
                         distance: asFiniteNumber(sourceCandidate.distance, 0),
-                        distanceBucket,
+                        distanceBucket: asDistanceBucket(sourceCandidate.distanceBucket),
                         sentence: asString(sourceCandidate.sentence),
                         displaySentence: asString(sourceCandidate.displaySentence, asString(sourceCandidate.sentence)),
-                        sourceStart: sourceCandidate.sourceStart == null ? null : asFiniteNumber(sourceCandidate.sourceStart, 0),
-                        sourceEnd: sourceCandidate.sourceEnd == null ? null : asFiniteNumber(sourceCandidate.sourceEnd, 0),
+                        sourceStart: asNullableFiniteNumber(sourceCandidate.sourceStart),
+                        sourceEnd: asNullableFiniteNumber(sourceCandidate.sourceEnd),
                         visible: Boolean(sourceCandidate.visible),
                     };
                 }),
             };
         }),
-        driftByLayer: driftByLayer.map((row) => (
-            Array.isArray(row)
-                ? row.map((value) => clamp(asFiniteNumber(value, 0)))
-                : []
-        )),
+        driftByLayer: sanitizeNumericMatrix(candidate.driftByLayer),
         globalTopEdges: globalTopEdges.map((edge, edgeIndex) => {
-            const edgeCandidate = edge && typeof edge === 'object' ? edge as Record<string, unknown> : {};
-            const distanceBucket = edgeCandidate.distanceBucket === 'local' || edgeCandidate.distanceBucket === 'medium' || edgeCandidate.distanceBucket === 'global'
-                ? edgeCandidate.distanceBucket
-                : 'local';
+            const edgeCandidate = asRecord(edge);
 
             return {
                 id: asString(edgeCandidate.id, `edge-${edgeIndex}`),
@@ -263,22 +277,22 @@ function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualization
                 score: asFiniteNumber(edgeCandidate.score, 0),
                 scoreNorm: clamp(asFiniteNumber(edgeCandidate.scoreNorm, 0)),
                 distance: asFiniteNumber(edgeCandidate.distance, 0),
-                distanceBucket,
+                distanceBucket: asDistanceBucket(edgeCandidate.distanceBucket),
                 color: asString(edgeCandidate.color, attentionColorForWeight(asFiniteNumber(edgeCandidate.scoreNorm, 0))),
             };
         }),
         vectorFlow: candidate.vectorFlow && typeof candidate.vectorFlow === 'object'
             ? {
-                projection: asString((candidate.vectorFlow as Record<string, unknown>).projection, 'pca'),
-                angleAmplification: asFiniteNumber((candidate.vectorFlow as Record<string, unknown>).angleAmplification, 36),
-                baseWeight: asFiniteNumber((candidate.vectorFlow as Record<string, unknown>).baseWeight, 1.2),
-                deltaWeight: asFiniteNumber((candidate.vectorFlow as Record<string, unknown>).deltaWeight, 0.55),
-                unitCircleRadius: asFiniteNumber((candidate.vectorFlow as Record<string, unknown>).unitCircleRadius, 1),
+                projection: asString(vectorFlow.projection, 'pca'),
+                angleAmplification: asFiniteNumber(vectorFlow.angleAmplification, 36),
+                baseWeight: asFiniteNumber(vectorFlow.baseWeight, 1.2),
+                deltaWeight: asFiniteNumber(vectorFlow.deltaWeight, 0.55),
+                unitCircleRadius: asFiniteNumber(vectorFlow.unitCircleRadius, 1),
                 bounds: {
-                    minX: asFiniteNumber((((candidate.vectorFlow as Record<string, unknown>).bounds as Record<string, unknown>)?.minX), -1.5),
-                    maxX: asFiniteNumber((((candidate.vectorFlow as Record<string, unknown>).bounds as Record<string, unknown>)?.maxX), 1.5),
-                    minY: asFiniteNumber((((candidate.vectorFlow as Record<string, unknown>).bounds as Record<string, unknown>)?.minY), -1.5),
-                    maxY: asFiniteNumber((((candidate.vectorFlow as Record<string, unknown>).bounds as Record<string, unknown>)?.maxY), 1.5),
+                    minX: asFiniteNumber(vectorFlowBounds.minX, -1.5),
+                    maxX: asFiniteNumber(vectorFlowBounds.maxX, 1.5),
+                    minY: asFiniteNumber(vectorFlowBounds.minY, -1.5),
+                    maxY: asFiniteNumber(vectorFlowBounds.maxY, 1.5),
                 },
             }
             : {
@@ -581,9 +595,6 @@ const App: React.FC = () => {
                 if (isMounted) {
                     setHealth({
                         ready: false,
-                        modelName: 'local model',
-                        device: 'unavailable',
-                        maxInputTokens: null,
                         error: error instanceof Error ? error.message : 'Unable to reach backend.',
                     });
                 }
@@ -666,21 +677,12 @@ const App: React.FC = () => {
             setAnalysisError(null);
 
             try {
-                const response = await fetch(`${API_BASE_URL}/analyze`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ text: deferredContent }),
-                    signal: controller.signal,
-                });
-
-                if (!response.ok) {
-                    const errorBody = await response.json().catch(() => null) as { detail?: string } | null;
-                    throw new Error(errorBody?.detail || `Analysis failed with status ${response.status}`);
-                }
-
-                const payload = sanitizeSemanticWeights(await response.json());
+                const payload = sanitizeSemanticWeights(await postJson(
+                    '/analyze',
+                    { text: deferredContent },
+                    controller.signal,
+                    'Analysis failed',
+                ));
                 if (latestRequestRef.current === requestId) {
                     startTransition(() => {
                         setSemanticWeights(payload);
@@ -731,21 +733,12 @@ const App: React.FC = () => {
             setAttentionError(null);
 
             try {
-                const response = await fetch(`${API_BASE_URL}/attention/document`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ text: deferredContent }),
-                    signal: controller.signal,
-                });
-
-                if (!response.ok) {
-                    const errorBody = await response.json().catch(() => null) as { detail?: string } | null;
-                    throw new Error(errorBody?.detail || `Attention analysis failed with status ${response.status}`);
-                }
-
-                const payload = sanitizeDocumentAttentionPayload(await response.json());
+                const payload = sanitizeDocumentAttentionPayload(await postJson(
+                    '/attention/document',
+                    { text: deferredContent },
+                    controller.signal,
+                    'Attention analysis failed',
+                ));
                 if (latestDocumentRequestRef.current === requestId) {
                     startTransition(() => {
                         setDocumentAttention(payload);
@@ -791,25 +784,16 @@ const App: React.FC = () => {
             setAttentionError(null);
 
             try {
-                const response = await fetch(`${API_BASE_URL}/attention/pair`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
+                const payload = sanitizeSentencePairAttentionPayload(await postJson(
+                    '/attention/pair',
+                    {
                         text: deferredContent,
                         sentenceXIndex: selectedPair.sentenceXIndex,
                         sentenceYIndex: selectedPair.sentenceYIndex,
-                    }),
-                    signal: controller.signal,
-                });
-
-                if (!response.ok) {
-                    const errorBody = await response.json().catch(() => null) as { detail?: string } | null;
-                    throw new Error(errorBody?.detail || `Token attention analysis failed with status ${response.status}`);
-                }
-
-                const payload = sanitizeSentencePairAttentionPayload(await response.json());
+                    },
+                    controller.signal,
+                    'Token attention analysis failed',
+                ));
                 if (latestPairRequestRef.current === requestId) {
                     startTransition(() => {
                         setPairAttention(payload);
@@ -855,21 +839,12 @@ const App: React.FC = () => {
             setDeltaVisualizationError(null);
 
             try {
-                const response = await fetch(`${API_BASE_URL}/delta/visualization`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ text: deferredContent }),
-                    signal: controller.signal,
-                });
-
-                if (!response.ok) {
-                    const errorBody = await response.json().catch(() => null) as { detail?: string } | null;
-                    throw new Error(errorBody?.detail || `Delta visualization failed with status ${response.status}`);
-                }
-
-                const payload = sanitizeDeltaVisualizationPayload(await response.json());
+                const payload = sanitizeDeltaVisualizationPayload(await postJson(
+                    '/delta/visualization',
+                    { text: deferredContent },
+                    controller.signal,
+                    'Delta visualization failed',
+                ));
                 if (latestDeltaVisualizationRequestRef.current === requestId) {
                     startTransition(() => {
                         setDeltaVisualization(payload);
@@ -1089,7 +1064,6 @@ const App: React.FC = () => {
         documentAttention,
         focusedArcSentence,
         focusedLongDistanceOptions,
-        focusedArcTopK,
         globalLongDistanceOptions,
         isLoadingDocumentAttention,
         manualArcSelection,

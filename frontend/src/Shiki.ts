@@ -28,13 +28,6 @@ function escapeHtml(value: string): string {
         .replace(/'/g, '&#39;');
 }
 
-function currentTheme() {
-    if (typeof document !== 'undefined' && document.body.classList.contains('light-mode')) {
-        return 'github-light';
-    }
-    return 'github-dark';
-}
-
 async function bootHighlighter() {
     if (initStarted) {
         return;
@@ -44,7 +37,7 @@ async function bootHighlighter() {
 
     try {
         highlighter = await createHighlighter({
-            themes: ['github-dark', 'github-light'],
+            themes: ['github-dark'],
             langs: ['plaintext', 'javascript', 'jsx', 'typescript', 'tsx', 'python', 'bash', 'markdown', 'json', 'yaml', 'html', 'css', 'latex'],
         });
 
@@ -104,7 +97,7 @@ export function highlightCodeSync(code: string, language: string) {
     try {
         return highlighter.codeToHtml(code, {
             lang: resolved as BuiltinLanguage,
-            theme: currentTheme(),
+            theme: 'github-dark',
         });
     } catch (error) {
         console.error('Shiki highlighting failed:', error);

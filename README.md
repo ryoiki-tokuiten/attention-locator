@@ -95,5 +95,4 @@ The frontend runs on Vite's local dev server, usually `http://localhost:5173`.
 - `backend/db.py`: **(New)** Database connection pool management with pgvector codec registration.
 - `backend/schema.sql`: **(New)** PostgreSQL schema and HNSW index definitions.
 - `backend/savis/attention.py`: Computes inter-sentence attention from model outputs.
-- `backend/savis/generator.py`: Handles text generation and attention extraction.
 - `frontend/RenderMathMarkdown.tsx` and `frontend/RenderMathMarkdownLogic.ts`: Custom markdown rendering with emphasis layers.

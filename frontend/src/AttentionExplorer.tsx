@@ -1,6 +1,7 @@
 import React from 'react';
 
 import type { DocumentAttentionPayload, SentencePairAttentionPayload } from './types/semantic';
+import { asFiniteNumber, attentionColorForWeight, clamp } from './utils';
 
 export type AttentionTab = 'rendered' | 'sentence' | 'token';
 
@@ -17,45 +18,6 @@ interface AttentionExplorerProps {
     isLoadingPair: boolean;
     error: string | null;
     onSelectPair: (selection: SentencePairSelection) => void;
-}
-
-function clamp(value: number, min = 0, max = 1) {
-    return Math.min(max, Math.max(min, value));
-}
-
-function asFiniteNumber(value: unknown, fallback = 0) {
-    const numeric = typeof value === 'number' ? value : Number(value);
-    return Number.isFinite(numeric) ? numeric : fallback;
-}
-
-export function attentionColorForWeight(weight: number): string {
-    const normalized = clamp(asFiniteNumber(weight));
-
-    const stops = [
-        { at: 0, color: [64, 196, 110] },
-        { at: 0.5, color: [80, 154, 255] },
-        { at: 1, color: [255, 92, 92] },
-    ] as const;
-
-    if (normalized <= stops[0].at) {
-        return `rgb(${stops[0].color.join(', ')})`;
-    }
-
-    for (let index = 1; index < stops.length; index += 1) {
-        const previous = stops[index - 1];
-        const current = stops[index];
-
-        if (normalized <= current.at) {
-            const range = current.at - previous.at || 1;
-            const progress = (normalized - previous.at) / range;
-            const color = previous.color.map((channel, channelIndex) => (
-                Math.round(channel + ((current.color[channelIndex] - channel) * progress))
-            ));
-            return `rgb(${color.join(', ')})`;
-        }
-    }
-
-    return `rgb(${stops[stops.length - 1].color.join(', ')})`;
 }
 
 function tokenLabel(token: string) {

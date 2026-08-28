@@ -1,1 +1,0 @@
-{"root":["./src/App.tsx","./src/Shiki.ts","./src/main.tsx","./src/setupTests.ts","./src/vite-env.d.ts","./src/worker-globals.d.ts","./src/UI/Icons.tsx","./src/__tests__/App.test.tsx","./src/__tests__/RenderMathMarkdown.test.tsx","./src/types/semantic.ts","./RenderMathMarkdown.tsx","./RenderMathMarkdownLogic.ts"],"version":"5.9.3"}

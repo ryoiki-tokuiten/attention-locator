@@ -113,7 +113,6 @@ class DeltaTensorStore:
         head_dim: int,
         storage_dtype: str = "float16",
     ) -> None:
-        self.storage_key = storage_key
         self.storage_dtype = np.dtype(storage_dtype)
         self.artifact_dir = DELTA_CACHE_ROOT / storage_key
         self.artifact_dir.mkdir(parents=True, exist_ok=True)

@@ -249,45 +249,17 @@ export const RenderMathMarkdown: React.FC<RenderMathMarkdownProps> = ({
 
         const imageItem = target.closest('.exec-image-item') as HTMLElement | null;
         if (imageItem && !imageItem.classList.contains('exec-image-error-item')) {
-            const windowWithPreview = window as Window & { previewImage?: (node: HTMLElement) => void };
-            if (typeof windowWithPreview.previewImage === 'function') {
-                windowWithPreview.previewImage(imageItem);
-            } else {
-                const src = imageItem.dataset.src || (imageItem.querySelector('img') as HTMLImageElement | null)?.src;
-                const format = imageItem.dataset.format || 'PNG';
-                const alt = imageItem.dataset.alt || 'Generated Figure';
+            const src = imageItem.dataset.src || (imageItem.querySelector('img') as HTMLImageElement | null)?.src;
+            const format = imageItem.dataset.format || 'PNG';
+            const alt = imageItem.dataset.alt || 'Generated Figure';
 
-                if (src) {
-                    window.dispatchEvent(new CustomEvent('exec-image-preview', {
-                        detail: { src, alt, format },
-                    }));
-                }
+            if (src) {
+                window.dispatchEvent(new CustomEvent('exec-image-preview', {
+                    detail: { src, alt, format },
+                }));
             }
 
             return;
-        }
-
-        if (target.id?.startsWith('toggle-') || target.closest('[id^="toggle-"]')) {
-            const toggleElement = target.id?.startsWith('toggle-')
-                ? target
-                : target.closest('[id^="toggle-"]') as HTMLElement | null;
-
-            if (!toggleElement) {
-                return;
-            }
-
-            const codeId = toggleElement.id.replace('toggle-', '');
-            const codeContent = document.getElementById(codeId);
-            const container = codeContent?.closest('.code-block-container');
-
-            if (codeContent && container) {
-                const isExpanded = codeContent.classList.contains('expanded');
-                codeContent.classList.toggle('expanded', !isExpanded);
-                codeContent.classList.toggle('collapsed', isExpanded);
-                toggleElement.classList.toggle('expanded', !isExpanded);
-                container.classList.toggle('expanded', !isExpanded);
-                container.classList.toggle('collapsed', isExpanded);
-            }
         }
 
         const semanticSentence = target.closest('.semantic-sentence[data-semantic-index]') as HTMLElement | null;
@@ -592,14 +564,14 @@ export const RenderMathMarkdown: React.FC<RenderMathMarkdownProps> = ({
                                     markerEnd={`url(#sentence-arc-arrow-${connection.id})`}
                                 />
                                 <circle
-                                    className="sentence-arc-endpoint sentence-arc-endpoint-source"
+                                    className="sentence-arc-endpoint"
                                     cx={connection.sourceX}
                                     cy={connection.sourceY}
                                     r={3.4}
                                     style={{ fill: connection.color }}
                                 />
                                 <circle
-                                    className="sentence-arc-endpoint sentence-arc-endpoint-target"
+                                    className="sentence-arc-endpoint"
                                     cx={connection.targetX}
                                     cy={connection.targetY}
                                     r={3.4}

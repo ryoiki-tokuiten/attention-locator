@@ -76,14 +76,11 @@ def create_app(
         lifespan=lifespan,
     )
 
-    app.state.ready = False
+    app.state.ready = analyzer is not None or not eager_load_default
     app.state.analyzer = analyzer
     app.state.startup_error = None
     app.state.inference_lock = asyncio.Lock()
     app.state.db_pool = None
-
-    if not eager_load_default:
-        app.state.ready = True
 
     app.add_middleware(
         CORSMiddleware,
@@ -115,6 +112,32 @@ def create_app(
 
         return runtime_analyzer
 
+    async def run_model_operation(operation, *, allow_not_implemented: bool = True):
+        async with app.state.inference_lock:
+            runtime_analyzer = resolve_runtime_analyzer()
+            if not getattr(app.state, "ready", False) or runtime_analyzer is None:
+                detail = getattr(app.state, "startup_error", None) or "Model is still loading."
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
+
+            try:
+                return operation(runtime_analyzer)
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+            except NotImplementedError as exc:
+                if allow_not_implemented:
+                    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+            except Exception as exc:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+    async def capture_delta_state(text: str):
+        return await run_model_operation(
+            lambda runtime_analyzer: (
+                runtime_analyzer.capture_delta_document(text),
+                runtime_analyzer._compute_state(text),
+            )
+        )
+
     @app.get("/health", response_model=HealthResponse)
     async def health_check() -> HealthResponse:
         async with app.state.inference_lock:
@@ -129,98 +152,46 @@ def create_app(
 
     @app.post("/analyze", response_model=list[SentenceWeightResponse])
     async def analyze_markdown(request: AnalyzeRequest) -> list[SentenceWeightResponse]:
-        async with app.state.inference_lock:
-            runtime_analyzer = resolve_runtime_analyzer()
-            if not getattr(app.state, "ready", False) or runtime_analyzer is None:
-                detail = getattr(app.state, "startup_error", None) or "Model is still loading."
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
-
-            try:
-                payload = runtime_analyzer.analyze_markdown(request.text)
-            except ValueError as exc:
-                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-            except Exception as exc:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+        payload = await run_model_operation(
+            lambda runtime_analyzer: runtime_analyzer.analyze_markdown(request.text),
+            allow_not_implemented=False,
+        )
 
         return [SentenceWeightResponse.model_validate(item) for item in payload]
 
     @app.post("/attention/document", response_model=DocumentAttentionResponse)
     async def analyze_attention_document(request: AnalyzeRequest) -> DocumentAttentionResponse:
-        async with app.state.inference_lock:
-            runtime_analyzer = resolve_runtime_analyzer()
-            if not getattr(app.state, "ready", False) or runtime_analyzer is None:
-                detail = getattr(app.state, "startup_error", None) or "Model is still loading."
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
-
-            try:
-                payload = runtime_analyzer.analyze_document(request.text)
-            except ValueError as exc:
-                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-            except NotImplementedError as exc:
-                raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
-            except Exception as exc:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+        payload = await run_model_operation(
+            lambda runtime_analyzer: runtime_analyzer.analyze_document(request.text),
+        )
 
         return DocumentAttentionResponse.model_validate(payload)
 
     @app.post("/attention/pair", response_model=SentencePairAttentionResponse)
     async def analyze_attention_pair(request: SentencePairRequest) -> SentencePairAttentionResponse:
-        async with app.state.inference_lock:
-            runtime_analyzer = resolve_runtime_analyzer()
-            if not getattr(app.state, "ready", False) or runtime_analyzer is None:
-                detail = getattr(app.state, "startup_error", None) or "Model is still loading."
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
-
-            try:
-                payload = runtime_analyzer.analyze_sentence_pair(
-                    request.text,
-                    request.sentenceXIndex,
-                    request.sentenceYIndex,
-                )
-            except ValueError as exc:
-                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-            except NotImplementedError as exc:
-                raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
-            except Exception as exc:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+        payload = await run_model_operation(
+            lambda runtime_analyzer: runtime_analyzer.analyze_sentence_pair(
+                request.text,
+                request.sentenceXIndex,
+                request.sentenceYIndex,
+            ),
+        )
 
         return SentencePairAttentionResponse.model_validate(payload)
 
     @app.post("/delta/document", response_model=DeltaCaptureResponse)
     async def capture_delta_document(request: AnalyzeRequest) -> DeltaCaptureResponse:
-        async with app.state.inference_lock:
-            runtime_analyzer = resolve_runtime_analyzer()
-            if not getattr(app.state, "ready", False) or runtime_analyzer is None:
-                detail = getattr(app.state, "startup_error", None) or "Model is still loading."
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
-
-            try:
-                payload = runtime_analyzer.capture_delta_document(request.text)
-            except ValueError as exc:
-                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-            except NotImplementedError as exc:
-                raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
-            except Exception as exc:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+        payload = await run_model_operation(
+            lambda runtime_analyzer: runtime_analyzer.capture_delta_document(request.text),
+        )
 
         return DeltaCaptureResponse.model_validate(payload)
 
     @app.post("/delta/visualization", response_model=DeltaVisualizationResponse)
     async def analyze_delta_visualization(request: AnalyzeRequest) -> DeltaVisualizationResponse:
-        async with app.state.inference_lock:
-            runtime_analyzer = resolve_runtime_analyzer()
-            if not getattr(app.state, "ready", False) or runtime_analyzer is None:
-                detail = getattr(app.state, "startup_error", None) or "Model is still loading."
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
-
-            try:
-                payload = runtime_analyzer.analyze_delta_visualization(request.text)
-            except ValueError as exc:
-                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-            except NotImplementedError as exc:
-                raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
-            except Exception as exc:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+        payload = await run_model_operation(
+            lambda runtime_analyzer: runtime_analyzer.analyze_delta_visualization(request.text),
+        )
 
         return DeltaVisualizationResponse.model_validate(payload)
 
@@ -240,21 +211,7 @@ def create_app(
         """Run delta capture for a document and persist its residual vectors to pgvector."""
         pool = _require_db()
 
-        async with app.state.inference_lock:
-            runtime_analyzer = resolve_runtime_analyzer()
-            if not getattr(app.state, "ready", False) or runtime_analyzer is None:
-                detail = getattr(app.state, "startup_error", None) or "Model is still loading."
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
-
-            try:
-                capture = runtime_analyzer.capture_delta_document(request.text)
-                state   = runtime_analyzer._compute_state(request.text)
-            except ValueError as exc:
-                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-            except NotImplementedError as exc:
-                raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
-            except Exception as exc:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+        capture, state = await capture_delta_state(request.text)
 
         sentence_payloads   = state.sentence_payloads
         sentence_boundaries = state.sentence_boundaries_ids
@@ -290,21 +247,7 @@ def create_app(
         """
         pool = _require_db()
 
-        async with app.state.inference_lock:
-            runtime_analyzer = resolve_runtime_analyzer()
-            if not getattr(app.state, "ready", False) or runtime_analyzer is None:
-                detail = getattr(app.state, "startup_error", None) or "Model is still loading."
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
-
-            try:
-                capture = runtime_analyzer.capture_delta_document(request.text)
-                state   = runtime_analyzer._compute_state(request.text)
-            except ValueError as exc:
-                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-            except NotImplementedError as exc:
-                raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
-            except Exception as exc:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+        capture, state = await capture_delta_state(request.text)
 
         n_sentences = len(state.sentences)
         if not 0 <= request.sentenceIndex < n_sentences:

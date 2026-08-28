@@ -23,7 +23,6 @@ keywords = ["nlp", "visualization", "attention", "large language models"]
 dependencies = [
     "torch",
     "transformers",
-    "matplotlib",
     "numpy",
     "nltk",
 ]

@@ -376,7 +376,7 @@ const DeltaVectorFlowCanvas: React.FC<DeltaVectorFlowCanvasProps> = ({
                         </marker>
                     </defs>
 
-                    <g className="delta-flow-grid">
+                    <g>
                         {gridLines.map((line) => (
                             <line
                                 key={line.key}
@@ -389,7 +389,7 @@ const DeltaVectorFlowCanvas: React.FC<DeltaVectorFlowCanvasProps> = ({
                         ))}
                     </g>
 
-                    <g className="delta-flow-layer">
+                    <g>
                         {flowSentences.map((sentence) => {
                             const flow = sentence.vectorFlow;
                             if (!flow) {
