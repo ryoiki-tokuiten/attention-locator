@@ -36,6 +36,10 @@ Every sentence `k` gets two exact spans:
 - **Token span**: `tokens[b_k : b_{k+1}]` for slicing model tensors
 - **Character span**: `[sourceStart, sourceEnd]` for highlighting the exact slice of text in the UI
 
+| Single-Pass Execution & Alignment | Max-Pooling & Opportunity Correction |
+| :---: | :---: |
+| <img src="docs/images/1.png" alt="Execution topology and alignment" /> | <img src="docs/images/2.png" alt="Max-pooling and opportunity correction" /> |
+
 ---
 
 ### Building the Sentence-to-Sentence Attention Matrix
@@ -95,6 +99,10 @@ These tensors are stored as memory-mapped `.npy` files via `DeltaTensorStore` (`
 - **Flow map**: Draws the strongest sentence-to-sentence residual write paths across the document (`globalTopEdges`).
 - **Source composition**: Shows which specific earlier sentences write the largest vector contributions into a selected sentence (`topSources`).
 - **Layer drift**: Measures how strongly each sentence's representation shifts across layers (`driftNorm` and `peakLayer`).
+
+| Layer Hooks & Delta Decomposition | Surface Reconciliation & Arc Parametrization |
+| :---: | :---: |
+| <img src="docs/images/3.png" alt="Residual stream delta capture" /> | <img src="docs/images/5.png" alt="Surface reconciliation and Bezier arcs" /> |
 
 ---
 
@@ -169,6 +177,8 @@ Open `http://localhost:5173`.
 ### Optional PostgreSQL + `pgvector` Store
 
 The attention and delta visualizations work out of the box without a database. To persist sentence-level residual vectors across documents and run cross-layer similarity or drift queries (`/vectors/*`), initialize a PostgreSQL database with `pgvector`:
+
+![PostgreSQL schema and vector queries](docs/images/4.png)
 
 ```bash
 psql -U <db_user> -d <db_name> -f backend/schema.sql

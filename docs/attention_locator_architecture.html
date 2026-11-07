@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Attention-Locator architecture: figures</title>
+  <style>
+    :root {
+      box-sizing: border-box;
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      --bg: #FAF7F0;
+      --bg-card: #F2EDE2;
+      --bg-deep: #EAE4D7;
+      --ink: #1E1E2E;
+      --mute: #767268;
+      --rule: #CFC8B8;
+      --faint: #DED8CA
+    }
+
+    html {
+      scroll-padding-top: env(safe-area-inset-top, 0px);
+      background-color: var(--bg)
+    }
+
+    body {
+      margin: 0;
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.65) 0%, rgba(250, 247, 240, 0) 68%, rgba(234, 227, 210, 0.45) 100%),
+        linear-gradient(to right, #E5DFD3 1.1px, transparent 1.1px),
+        linear-gradient(to bottom, #E5DFD3 1.1px, transparent 1.1px),
+        linear-gradient(to right, #EFEAE0 0.8px, transparent 0.8px),
+        linear-gradient(to bottom, #EFEAE0 0.8px, transparent 0.8px);
+      background-size: 100% 100%, 192px 192px, 192px 192px, 48px 48px, 48px 48px;
+      background-attachment: fixed;
+      color: var(--ink);
+      font-family: "Latin Modern Roman", "CMU Serif", Georgia, "Times New Roman", serif;
+      -webkit-font-smoothing: antialiased
+    }
+
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 32px 16px 64px
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 600;
+      margin: 0 0 6px;
+      line-height: 1.22;
+      letter-spacing: -.2px
+    }
+
+    .lede {
+      margin: 0 0 22px;
+      color: var(--mute);
+      font-size: 16px;
+      line-height: 1.55
+    }
+
+    .toc {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+      padding: 11px 16px;
+      margin: 0 0 30px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(242, 237, 226, 0.82) 100%);
+      border: 1.5px solid var(--rule);
+      border-radius: 8px;
+      box-shadow: 0 2px 0 rgba(207, 199, 182, 0.45), 0 4px 12px rgba(30, 30, 46, 0.04);
+      font-size: 13.5px;
+      color: var(--mute)
+    }
+
+    .toc a {
+      color: var(--ink);
+      text-decoration: none;
+      border-bottom: 1px dotted var(--mute)
+    }
+
+    .toc a:hover {
+      border-bottom-style: solid
+    }
+
+    section.sec {
+      margin: 36px 0 14px;
+      padding-top: 12px;
+      border-top: 1.5px solid var(--rule)
+    }
+
+    section.sec:first-of-type {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: none
+    }
+
+    .sec-kicker {
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .6px;
+      text-transform: uppercase;
+      color: var(--mute);
+      margin: 0 0 3px
+    }
+
+    h2 {
+      font-size: 20px;
+      font-weight: 600;
+      margin: 0 0 8px;
+      line-height: 1.3
+    }
+
+    .sec-desc {
+      margin: 0 0 18px;
+      color: var(--mute);
+      font-size: 15px;
+      line-height: 1.6
+    }
+
+    figure {
+      margin: 0 0 28px;
+      background: linear-gradient(180deg, #FFFFFF 0%, #FAF7F0 100%);
+      color: var(--ink);
+      border: 1.5px solid var(--rule);
+      border-radius: 10px;
+      padding: 14px 12px 10px;
+      box-shadow:
+        0 2.5px 0 rgba(207, 199, 182, 0.55),
+        0 8px 24px rgba(30, 30, 46, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9)
+    }
+
+    figure>svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 6px
+    }
+
+    figcaption code,
+    .sec-desc code {
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 12.5px;
+      background: var(--bg-card);
+      border: 1px solid var(--faint);
+      padding: 1px 5px;
+      border-radius: 4px
+    }
+
+    svg text {
+      font-family: "Latin Modern Roman", "CMU Serif", Georgia, "Times New Roman", serif
+    }
+
+    .th {
+      font-size: 14px;
+      font-weight: 600;
+      fill: #1E1E2E
+    }
+
+    .ts {
+      font-size: 12px;
+      fill: #363633
+    }
+
+    svg text.m {
+      font-family: ui-monospace, Menlo, Consolas, monospace
+    }
+  </style>
+</head>
+
+<body>
+  <svg style="position:absolute;width:0;height:0" aria-hidden="true">
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#1E1E2E" stroke-width="1.6" stroke-linecap="round"
+          stroke-linejoin="round" />
+      </marker>
+      <marker id="ag" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6"
+        orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#1F8A5B" stroke-width="1.6" stroke-linecap="round"
+          stroke-linejoin="round" />
+      </marker>
+      <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6"
+        orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#C94438" stroke-width="1.6" stroke-linecap="round"
+          stroke-linejoin="round" />
+      </marker>
+      <marker id="av" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6"
+        orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#6C3CE9" stroke-width="1.6" stroke-linecap="round"
+          stroke-linejoin="round" />
+      </marker>
+      <!-- Deepthink architectural stage grid & surface gradients -->
+      <pattern id="fineGrid" width="32" height="32" patternUnits="userSpaceOnUse">
+        <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#EFEAE0" stroke-width="0.75" />
+      </pattern>
+      <pattern id="archGrid" width="128" height="128" patternUnits="userSpaceOnUse">
+        <rect width="128" height="128" fill="url(#fineGrid)" />
+        <path d="M 128 0 L 0 0 0 128" fill="none" stroke="#E5DFD3" stroke-width="1.05" />
+      </pattern>
+      <radialGradient id="softStageGlow" cx="50%" cy="45%" r="65%">
+        <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55" />
+        <stop offset="70%" stop-color="#FAF7F0" stop-opacity="0" />
+        <stop offset="100%" stop-color="#EAE3D2" stop-opacity="0.4" />
+      </radialGradient>
+      <linearGradient id="cardTopSheen" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.72" />
+        <stop offset="26%" stop-color="#FFFFFF" stop-opacity="0" />
+        <stop offset="100%" stop-color="#1E1E2E" stop-opacity="0.018" />
+      </linearGradient>
+      <linearGradient id="recessedGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#D5CEBF" stop-opacity="0.24" />
+        <stop offset="14%" stop-color="#D5CEBF" stop-opacity="0.03" />
+        <stop offset="88%" stop-color="#FFFFFF" stop-opacity="0" />
+        <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.6" />
+      </linearGradient>
+      <!-- Rich architectural surface textures -->
+      <pattern id="dots" width="12" height="12" patternUnits="userSpaceOnUse">
+        <rect width="12" height="12" fill="#F3F1E8" />
+        <circle cx="6" cy="6" r="0.85" fill="#cfccc0" />
+      </pattern>
+      <pattern id="grid" width="16" height="16" patternUnits="userSpaceOnUse">
+        <rect width="16" height="16" fill="#F5F3EB" />
+        <path d="M 16 0 L 0 0 0 16" fill="none" stroke="#e4e1d6" stroke-width="0.7" />
+      </pattern>
+      <pattern id="hatchG" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="6" height="6" fill="#D4EFE1" />
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#1F8A5B" stroke-width="1.4" stroke-opacity="0.35" />
+      </pattern>
+      <pattern id="hatchR" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="6" height="6" fill="#F9D8D4" />
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#C94438" stroke-width="1.4" stroke-opacity="0.35" />
+      </pattern>
+      <pattern id="hatchP" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="6" height="6" fill="#E6DEFA" />
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#6C3CE9" stroke-width="1.4" stroke-opacity="0.35" />
+      </pattern>
+    </defs>
+  </svg>
+  <main>
+    <h1>Attention-Locator architecture</h1>
+    <p class="lede">Full-context transformer inspection pipeline: subword-to-sentence boundary alignment, three-stage max-pooled attention reduction with causal opportunity correction, per-head residual stream output projection hooks, flicker-free DOM surface reconciliation, and HNSW vector persistence.</p>
+    <nav class="toc" aria-label="Sections">
+      <a href="#sec-1">Execution &amp; Alignment Topology</a>
+      <a href="#sec-2">Max-Pooling &amp; Opportunity Correction</a>
+      <a href="#sec-3">Residual Delta Capture &amp; Projection</a>
+      <a href="#sec-4">Surface Rendering &amp; Vector Store</a>
+    </nav>
+    <div id="f"></div>
+  </main>
+  <script>
+    const HX = (() => {
+      const C = {
+        g: ['#F2EDE2', '#767268', '#1E1E2E'],
+        t: ['#D4EFE1', '#1F8A5B', '#093824'],
+        c: ['#F9D8D4', '#C94438', '#4A1B0C'],
+        p: ['#E6DEFA', '#6C3CE9', '#26145C'],
+        a: ['#FCE6C2', '#C87D1E', '#412402']
+      };
+      const LIP = {
+        '#534AB7': '#4E26B8', '#6C3CE9': '#4E26B8',
+        '#0F6E56': '#156340', '#1F8A5B': '#156340',
+        '#993C1D': '#9A2E24', '#C94438': '#9A2E24',
+        '#BA7517': '#9B5E12', '#C87D1E': '#9B5E12',
+        '#2C2C2A': '#11111B', '#1E1E2E': '#11111B',
+        '#5F5E5A': '#524E46', '#767268': '#524E46'
+      };
+      const REC_FILLS = new Set(['#F8F7F2', '#F4F2EA', '#EAE8E0', '#F2EDE2', '#FAF9F5']);
+      const esc = s => String(s).replace(/&(?!(?:amp|lt|gt|quot|#\d+);)/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const T = (x, y, s, a = 'middle', c = 'ts', st = '') => `<text class="${c}" x="${x}" y="${y}" text-anchor="${a}" dominant-baseline="central"${st ? ` style="${st}"` : ''}>${esc(s)}</text>`;
+      const box = (x, y, w, h, fi = '#fff', st = '#CFC8B8', sw = 1, rx = 4) => {
+        const isRec = REC_FILLS.has(fi) && !LIP[st];
+        if (isRec) {
+          return `<rect x="${x}" y="${y + 1}" width="${w}" height="${h}" rx="${rx}" fill="#FFFFFF" opacity="0.75"/>` +
+            `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fi}" stroke="${st}" stroke-width="${sw}"/>` +
+            (h >= 28 ? `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="url(#recessedGrad)" pointer-events="none"/>` : '');
+        }
+        const shY = h >= 100 ? 3.2 : h >= 44 ? 2.2 : 1.4;
+        const lipY = h >= 100 ? 2.0 : h >= 44 ? 1.5 : 1.1;
+        const lipCol = LIP[st] || '#CFC7B6';
+        return `<rect x="${x}" y="${y + shY}" width="${w}" height="${h}" rx="${rx}" fill="#1E1E2E" opacity="${h >= 100 ? 0.055 : 0.04}"/>` +
+          `<rect x="${x}" y="${y + lipY}" width="${w}" height="${h}" rx="${rx}" fill="${lipCol}" opacity="0.32"/>` +
+          `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fi}" stroke="${st}" stroke-width="${sw}"/>` +
+          (h >= 24 ? `<rect x="${x + 0.8}" y="${y + 0.8}" width="${Math.max(0, w - 1.6)}" height="${Math.max(0, h - 1.6)}" rx="${Math.max(1, rx - 0.8)}" fill="url(#cardTopSheen)" pointer-events="none"/>` : '');
+      };
+      const L = (k, x, y, w, h, a, b) => { const [f, s, t] = C[k]; return box(x, y, w, h, f, s, 1.1, 4) + T(x + w / 2, b ? y + h / 2 - 9 : y + h / 2, a, 'middle', 'th', `fill:${t}`) + (b ? T(x + w / 2, y + h / 2 + 10, b) : '') };
+      const P = (d, k = 0, mk = 'a') => {
+        const col = mk == 'ag' ? '#1F8A5B' : mk == 'ar' ? '#C94438' : mk == 'av' ? '#6C3CE9' : '#1E1E2E';
+        return (!k ? `<path d="${d}" transform="translate(0, 1.1)" fill="none" stroke="#1E1E2E" stroke-width="2.1" opacity="0.075"/>` : '') +
+          `<path d="${d}" fill="none" stroke="${col}" stroke-width="1.35"${k ? ' stroke-dasharray="4 4"' : ''} marker-end="url(#${mk})"/>`;
+      };
+      const D = (x, y, w, h, fi = 'none', st = '#8a8880') => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="${fi}" stroke="${st}" stroke-width="1" stroke-dasharray="4 3"/>`;
+      const ln = (x1, y1, x2, y2, st = '#1E1E2E', w = 1.2, d = '') => `<path d="M${x1} ${y1}L${x2} ${y2}" stroke="${st}" stroke-width="${w}"${d ? ` stroke-dasharray="${d}"` : ''}/>`;
+      const TX = (x, y, l, fs = 12, a = 'start', c = '#1E1E2E') => { const S = typeof l == 'string' ? [[l, c]] : l; return `<g class="tx" data-x="${x}" data-y="${y}" data-fs="${fs}" data-a="${a}" data-t="${encodeURIComponent(JSON.stringify(S))}"><text class="m" x="${x}" y="${y}" text-anchor="${a}" dominant-baseline="central" style="font-size:8px;fill:#8a8880"></text></g>` };
+      const card = (x, y, w, h, fi = '#F2EDE2', st = '#9e9b90') => box(x, y, w, h, fi, st, 1.15, 5);
+      const hdrBox = (x, y, w, h, hh, bf, hf, st, sw = 1.1, r = 4) => {
+        const lipCol = LIP[st] || '#CFC7B6';
+        return `<rect x="${x}" y="${y + 3}" width="${w}" height="${h}" rx="${r}" fill="#1E1E2E" opacity="0.05"/>` +
+          `<rect x="${x}" y="${y + 1.8}" width="${w}" height="${h}" rx="${r}" fill="${lipCol}" opacity="0.32"/>` +
+          `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="${bf}" stroke="none"/>` +
+          `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="url(#recessedGrad)" pointer-events="none"/>` +
+          `<path d="M${x} ${y + hh}V${y + r}Q${x} ${y} ${x + r} ${y}H${x + w - r}Q${x + w} ${y} ${x + w} ${y + r}V${y + hh}Z" fill="${hf}"/>` +
+          `<path d="M${x} ${y + hh}V${y + r}Q${x} ${y} ${x + r} ${y}H${x + w - r}Q${x + w} ${y} ${x + w} ${y + r}V${y + hh}Z" fill="url(#cardTopSheen)" pointer-events="none"/>` +
+          ln(x, y + hh, x + w, y + hh, st, 0.9) +
+          `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="none" stroke="${st}" stroke-width="${sw}"/>`;
+      };
+      const badge = (x, y, w, h, txt, fi, st, tc, fs = 9.5) =>
+        `<rect x="${x}" y="${y + 1}" width="${w}" height="${h}" rx="3" fill="${LIP[st] || '#CFC7B6'}" opacity="0.28"/>` +
+        `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${fi}" stroke="${st}" stroke-width="1"/>` +
+        `<rect x="${x + 0.5}" y="${y + 0.5}" width="${w - 1}" height="${h - 1}" rx="2.5" fill="url(#cardTopSheen)" pointer-events="none"/>` +
+        T(x + w / 2, y + h / 2, txt, 'middle', 'ts', `font-size:${fs}px;font-weight:700;fill:${tc}`);
+      return { C, T, L, P, D, ln, TX, card, box, hdrBox, badge };
+    })();
+
+    // ============================================================================
+    // FIGURE 1: EXECUTION TOPOLOGY & SUBWORD-TO-SENTENCE ALIGNMENT
+    // ============================================================================
+    const F_TOPO = (() => {
+      const { C, T, P, ln, TX, box, hdrBox, badge } = HX;
+      const G = '#0F6E56', R = '#993C1D', V = '#534AB7', OR = '#BA7517', gray = 'fill:#52514d;font-size:11.5px';
+      const r = String.raw;
+      let s = '';
+
+      // Panel: End-to-End Inference & Dual-Tier State Topology
+      s += T(24, 26, 'Single-Pass Eager Execution & Two-Tier State Memoization', 'start', 'th');
+
+      // Row 1: Client -> FastAPI -> State Cache Gate
+      s += box(38, 62, 156, 46, C.g[0], C.g[1], 1.1);
+      s += T(116, 79, 'Editable Surface', 'middle', 'th', `font-size:12px;fill:${C.g[2]}`);
+      s += T(116, 96, '220 ms debounce', 'middle', 'ts m', 'font-size:9.2px;fill:#52514d');
+
+      s += P('M194 85H232');
+
+      s += box(234, 62, 184, 46, C.a[0], OR, 1.1);
+      s += T(326, 79, 'FastAPI Endpoints', 'middle', 'th', `font-size:12px;fill:${C.a[2]}`);
+      s += T(326, 96, '/document · /delta', 'middle', 'ts m', 'font-size:9.2px;fill:#52514d');
+
+      s += P('M418 85H456');
+
+      s += box(458, 62, 184, 46, C.p[0], V, 1.1);
+      s += T(550, 79, 'State Cache Gate', 'middle', 'th', `font-size:12px;fill:${C.p[2]}`);
+      s += T(550, 96, 'normalize_text(raw)', 'middle', 'ts m', 'font-size:9.2px;fill:#52514d');
+
+      // Cache Miss branch into Model Forward Pass
+      s += ln(508, 108, 508, 125, R, 1.3);
+      s += ln(508, 125, 412, 125, R, 1.3);
+      s += badge(326, 116, 86, 18, 'CACHE MISS', '#F8CFBF', R, '#4A1B0C', 9);
+      s += P('M326 125H290V144', 0, 'ar');
+
+      // Cache Hit bypass lane (clean right gutter at x=622)
+      s += ln(622, 108, 622, 162, G, 1.3, '4 4');
+      s += badge(582, 162, 76, 18, 'CACHE HIT', '#BDEBD5', G, '#04342C', 9);
+      s += P('M622 180V344H440', 1, 'ag');
+      s += T(612, 330, 'reuses RAM + .npy state', 'end', 'ts', `font-size:9.5px;font-weight:600;fill:${G}`);
+
+      // Central Model Pass Banner
+      s += box(58, 146, 464, 48, '#F8F7F2', '#2C2C2A', 1.2, 5);
+      s += T(290, 162, 'Single Eager Causal Forward Pass (Qwen2.5-1.5B, torch.no_grad)', 'middle', 'th', 'font-size:12px');
+      s += T(290, 180, 'attn_implementation="eager" · output_attentions=True · L=28, H=12', 'middle', 'ts m', 'font-size:8.8px;fill:#52514d');
+
+      // Split into Track A (left) and Track B (right)
+      s += P('M168 194V214', 0, 'av');
+      s += P('M446 194V214', 0, 'ag');
+
+      // Track A Container: In-Memory Attention State (x=38..300, y=216..310)
+      s += hdrBox(38, 216, 262, 94, 22, '#F4F3FE', '#CECBF6', V, 1.1, 5);
+      s += T(169, 227, 'TRACK A: IN-MEMORY ATTENTION STATE', 'middle', 'ts', `font-size:8.8px;font-weight:700;fill:${C.p[2]}`);
+
+      s += box(46, 244, 118, 58, '#fff', V, 0.95);
+      s += T(105, 257, 'Attention Tensor', 'middle', 'th', `font-size:10.8px;fill:${C.p[2]}`);
+      s += TX(105, 275, r`A \in \mathbb{R}^{L \times H \times T \times T}`, 10.5, 'middle', '#161615');
+      s += T(105, 291, 'float32 in RAM', 'middle', 'ts m', 'font-size:8.5px;fill:#52514d');
+
+      s += box(172, 244, 120, 58, '#fff', V, 0.95);
+      s += T(232, 257, 'ISA + Offset Map', 'middle', 'th', `font-size:10.8px;fill:${C.p[2]}`);
+      s += TX(232, 275, r`S[p, q],\; [b_k, b_{k+1})`, 10.5, 'middle', '#161615');
+      s += T(232, 291, 'char [start, end]', 'middle', 'ts m', 'font-size:8.5px;fill:#52514d');
+
+      // Track B Container: Layer Forward Hooks (x=314..576, y=216..310)
+      s += hdrBox(314, 216, 262, 94, 22, '#EBF8F3', '#9FE1CB', G, 1.1, 5);
+      s += T(445, 227, 'TRACK B: LAYER FORWARD HOOKS', 'middle', 'ts', `font-size:8.8px;font-weight:700;fill:${C.t[2]}`);
+
+      s += box(322, 244, 118, 58, '#fff', G, 0.95);
+      s += T(381, 257, 'DeltaTensorStore', 'middle', 'th', `font-size:10.8px;fill:${C.t[2]}`);
+      s += T(381, 275, '5 memmap .npy', 'middle', 'ts m', 'font-size:8.8px;font-weight:700;fill:#04342C');
+      s += T(381, 291, '/tmp delta cache', 'middle', 'ts m', 'font-size:8.5px;fill:#52514d');
+
+      s += box(448, 244, 120, 58, '#fff', G, 0.95);
+      s += T(508, 257, 'pgvector Store', 'middle', 'th', `font-size:10.8px;fill:${C.t[2]}`);
+      s += T(508, 275, 'VECTOR(1536)', 'middle', 'ts m', 'font-size:8.8px;font-weight:700;fill:#04342C');
+      s += T(508, 291, 'HNSW cosine idx', 'middle', 'ts m', 'font-size:8.5px;fill:#52514d');
+
+      // Merge into Response Builders (y=324..364)
+      s += P('M169 310V344H216');
+      s += P('M381 310V322');
+      s += box(218, 324, 220, 40, C.g[0], C.g[1], 1.1);
+      s += T(328, 337, 'JSON Payload Builders', 'middle', 'th', `font-size:11.8px;fill:${C.g[2]}`);
+      s += T(328, 353, 'DocumentAttention · DeltaPayload', 'middle', 'ts m', 'font-size:8.6px;fill:#52514d');
+
+      // Divider
+      s += ln(24, 390, 656, 390, '#b8b5aa', 1.2);
+
+      // Panel: Progressive Token-to-Sentence Boundary Alignment
+      s += T(24, 418, 'Progressive Subword-to-Sentence Alignment & Character Offset Recovery', 'start', 'th');
+
+      // Row 1: Raw text strip with exact character indices
+      s += T(36, 464, 'Raw text', 'start', 'th', 'font-size:11.5px');
+      s += T(36, 480, 'char offsets', 'start', 'ts m', 'font-size:9px;fill:#52514d');
+
+      s += box(118, 452, 246, 40, C.p[0], V, 1.1);
+      s += T(241, 465, '"The model routes context."', 'middle', 'ts m', `font-size:9.8px;font-weight:700;fill:${C.p[2]}`);
+      s += T(241, 481, 's_0 : [0, 25)', 'middle', 'ts m', 'font-size:8.8px;fill:#52514d');
+
+      s += box(368, 452, 38, 40, C.g[0], '#8a8880', 0.9);
+      s += T(387, 465, '\\n\\n', 'middle', 'ts m', 'font-size:9px;font-weight:700;fill:#222220');
+      s += T(387, 481, '25..27', 'middle', 'ts m', 'font-size:7.8px;fill:#52514d');
+
+      s += box(410, 452, 234, 40, C.t[0], G, 1.1);
+      s += T(527, 465, '"Later clauses cite it."', 'middle', 'ts m', `font-size:9.8px;font-weight:700;fill:${C.t[2]}`);
+      s += T(527, 481, 's_1 : [27, 49)', 'middle', 'ts m', 'font-size:8.8px;fill:#52514d');
+
+      // Row 2: Subword token stream t_0 .. t_10
+      s += T(36, 518, 'Subwords', 'start', 'th', 'font-size:11.5px');
+      s += T(36, 534, '_clean_piece', 'start', 'ts m', 'font-size:9px;fill:#52514d');
+
+      const toks = [
+        { id: 't0', lbl: 'The', k: 'p', x: 118, w: 46 },
+        { id: 't1', lbl: 'Ġmodel', k: 'p', x: 167, w: 54 },
+        { id: 't2', lbl: 'Ġroutes', k: 'p', x: 224, w: 56 },
+        { id: 't3', lbl: 'Ġcontext', k: 'p', x: 283, w: 58 },
+        { id: 't4', lbl: '.', k: 'p', x: 344, w: 20 },
+        { id: 't5', lbl: 'ĊĊ', k: 'g', x: 368, w: 38 },
+        { id: 't6', lbl: 'Later', k: 't', x: 410, w: 52 },
+        { id: 't7', lbl: 'Ġclauses', k: 't', x: 465, w: 62 },
+        { id: 't8', lbl: 'Ġcite', k: 't', x: 530, w: 48 },
+        { id: 't9', lbl: 'Ġit', k: 't', x: 581, w: 36 },
+        { id: 't10', lbl: '.', k: 't', x: 620, w: 24 }
+      ];
+      toks.forEach(tk => {
+        const col = C[tk.k];
+        s += box(tk.x, 504, tk.w, 40, col[0], col[1], 1);
+        s += T(tk.x + tk.w / 2, 516, tk.lbl, 'middle', 'ts m', `font-size:8.8px;font-weight:700;fill:${col[2]}`);
+        s += T(tk.x + tk.w / 2, 533, tk.id, 'middle', 'ts m', 'font-size:8.2px;fill:#52514d');
+      });
+
+      // Row 3: Prefix Accumulator & Boundary Indices
+      s += T(36, 574, 'Spans', 'start', 'th', 'font-size:11.5px');
+      s += T(36, 590, 'boundaries', 'start', 'ts m', 'font-size:9px;fill:#52514d');
+
+      // Bracket for s_0: [b_0=0, b_1=5)
+      s += ln(118, 548, 118, 555, V, 1.4);
+      s += ln(364, 548, 364, 555, V, 1.4);
+      s += ln(118, 552, 364, 552, V, 1.4);
+      s += box(132, 558, 218, 42, '#fff', V, 1.1);
+      s += TX(241, 571, r`s_0:\; [b_0, b_1) = [0, 5)`, 11, 'middle', C.p[2]);
+      s += T(241, 589, 'prefix matches target sentence s_0', 'middle', 'ts', 'font-size:9.2px;fill:#52514d');
+
+      // Bracket for s_1: [b_1=5, b_2=11)
+      s += ln(368, 548, 368, 555, G, 1.4);
+      s += ln(644, 548, 644, 555, G, 1.4);
+      s += ln(368, 552, 644, 552, G, 1.4);
+      s += box(394, 558, 232, 42, '#fff', G, 1.1);
+      s += TX(510, 571, r`s_1:\; [b_1, b_2) = [5, 11)`, 11, 'middle', C.t[2]);
+      s += T(510, 589, 'boundaries = [0, 5, 11]  (T = 11)', 'middle', 'ts', 'font-size:9.2px;fill:#52514d');
+
+      return [620, 'Execution topology and subword-to-sentence boundary alignment', s, ''];
+    })();
+
+    // ============================================================================
+    // FIGURE 2: THREE-STAGE MAX-POOLING & CAUSAL OPPORTUNITY CORRECTION
+    // ============================================================================
+    const F_SCORE = (() => {
+      const { C, T, P, ln, TX, card, box, hdrBox, badge } = HX;
+      const G = '#0F6E56', R = '#993C1D', V = '#534AB7', OR = '#BA7517', gray = 'fill:#52514d;font-size:11.5px';
+      const r = String.raw;
+      let s = '';
+
+      // Panel: Three-Stage Max-Pooling Reduction
+      s += T(24, 26, 'Three-Stage Max-Pooling Reduction from 4D Token Attention to Sentence Matrix', 'start', 'th');
+
+      // Box 1: Raw 4D Tensor (x=36..162, w=126)
+      s += box(36, 60, 126, 92, C.g[0], C.g[1], 1.1);
+      s += T(99, 77, 'Raw Attention', 'middle', 'th', `font-size:11.5px;fill:${C.g[2]}`);
+      s += `<rect x="46" y="88" width="106" height="22" rx="3" fill="#fff" stroke="#cfcdc4" stroke-width=".8"/>`;
+      s += TX(99, 99, r`A[\ell, h, i, j]`, 10.5, 'middle', '#161615');
+      s += T(99, 122, 'shape: [L, H, T, T]', 'middle', 'ts m', 'font-size:8.8px;fill:#52514d');
+      s += T(99, 138, '[28, 12, T, T]', 'middle', 'ts m', `font-size:8.8px;font-weight:700;fill:${C.g[2]}`);
+
+      s += P('M162 106H192', 0, 'av');
+      s += T(177, 92, 'max_l', 'middle', 'ts m', `font-size:8.5px;font-weight:700;fill:${V}`);
+
+      // Box 2: Layer-Max Tensor (x=194..322, w=128)
+      s += box(194, 60, 128, 92, C.p[0], V, 1.1);
+      s += T(258, 77, 'Layer Peak', 'middle', 'th', `font-size:11.5px;fill:${C.p[2]}`);
+      s += `<rect x="204" y="88" width="108" height="22" rx="3" fill="#fff" stroke="${V}" stroke-width=".8"/>`;
+      s += TX(258, 99, r`\max_{\ell} A[\ell, h, i, j]`, 10.2, 'middle', C.p[2]);
+      s += T(258, 122, 'shape: [H, T, T]', 'middle', 'ts m', 'font-size:8.8px;fill:#52514d');
+      s += T(258, 138, 'sharpest layer per head', 'middle', 'ts', 'font-size:9px;fill:#52514d');
+
+      s += P('M322 106H352', 0, 'ag');
+      s += T(337, 92, 'rect', 'middle', 'ts m', `font-size:8.5px;font-weight:700;fill:${G}`);
+
+      // Box 3: Span-Rectangle Max per Head (x=354..482, w=128)
+      s += box(354, 60, 128, 92, C.t[0], G, 1.1);
+      s += T(418, 77, 'Block Peak', 'middle', 'th', `font-size:11.5px;fill:${C.t[2]}`);
+      s += `<rect x="364" y="88" width="108" height="22" rx="3" fill="#fff" stroke="${G}" stroke-width=".8"/>`;
+      s += TX(418, 99, r`\max_{i \in p,\, j \in q} A_{\text{head}}`, 10, 'middle', C.t[2]);
+      s += T(418, 122, 'shape: [H, S, S]', 'middle', 'ts m', 'font-size:8.8px;fill:#52514d');
+      s += T(418, 138, 'avoids length dilution', 'middle', 'ts', 'font-size:9px;fill:#52514d');
+
+      s += P('M482 106H512', 0, 'ar');
+      s += T(497, 92, 'max_h', 'middle', 'ts m', `font-size:8.5px;font-weight:700;fill:${R}`);
+
+      // Box 4: Final Sentence Matrix S[p, q] (x=514..644, w=130)
+      s += box(514, 60, 130, 92, C.c[0], R, 1.2);
+      s += T(579, 77, 'Sentence Matrix', 'middle', 'th', `font-size:11.5px;fill:${C.c[2]}`);
+      s += `<rect x="524" y="88" width="110" height="22" rx="3" fill="#fff" stroke="${R}" stroke-width=".8"/>`;
+      s += TX(579, 99, r`S[p, q] = \max_{h} S_{\text{head}}`, 10, 'middle', C.c[2]);
+      s += T(579, 122, 'shape: [S, S]', 'middle', 'ts m', 'font-size:8.8px;fill:#52514d');
+      s += T(579, 138, 'causal mask: q <= p', 'middle', 'ts m', `font-size:8.5px;font-weight:700;fill:${R}`);
+
+      // Divider
+      s += ln(24, 178, 656, 178, '#b8b5aa', 1.2);
+
+      // Panel: Causal Opportunity Correction & Worked Numerical Walkthrough
+      s += T(24, 204, 'Causal Opportunity Correction & Worked Numerical Walkthrough (T = 40 tokens, S = 4)', 'start', 'th');
+
+      // Two side-by-side formula cards (w=308 each, with crisp inner white equation boxes)
+      s += card(24, 232, 308, 82, '#E6DEFA', V);
+      s += T(38, 248, 'Raw Incoming Sum & Token Opportunity', 'start', 'th', `font-size:11.5px;fill:${C.p[2]}`);
+      s += box(36, 258, 284, 30, '#fff', V, 0.9, 3);
+      s += TX(178, 273, r`I_j = \sum_{i \neq j} S[i, j], \quad O_j = \max(T - b_{j+1},\, 1)`, 11, 'middle', '#161615');
+      s += T(38, 301, 'Early sentences have larger O_j under a causal mask.', 'start', 'ts', 'font-size:9.5px;fill:#26215C');
+
+      s += card(348, 232, 308, 82, '#D4EFE1', G);
+      s += T(362, 248, 'Opportunity-Corrected & Normalized Score', 'start', 'th', `font-size:11.5px;fill:${C.t[2]}`);
+      s += box(360, 258, 284, 30, '#fff', G, 0.9, 3);
+      s += TX(502, 273, r`R_j = I_j \cdot \frac{\bar{O}}{O_j}, \quad W_j = \frac{R_j - R_{\min}}{R_{\max} - R_{\min}}`, 11, 'middle', C.t[2]);
+      s += T(362, 301, 'Rescales by mean opportunity so late clauses compete.', 'start', 'ts', 'font-size:9.5px;fill:#04342C');
+
+      // Full-Width Worked Numerical Table (x=24..656, w=632)
+      const tx = 24, ty = 326, tw = 632;
+      // Column boundaries: [24, 92, 180, 266, 354, 444, 532, 656]
+      const cBounds = [24, 92, 180, 266, 354, 444, 532, 656];
+      const cLabels = ['Sentence', 'Token Span', 'Opp. O_j', 'Raw Sum I_j', 'Scale Factor', 'Corr. R_j', 'Normalized W_j'];
+
+      // Draw table shadow, lip, background & header fill first, then rows, then outer border on top
+      s += `<rect x="${tx}" y="${ty + 3.5}" width="${tw}" height="178" rx="4" fill="#1E1E2E" opacity="0.055"/>`;
+      s += `<rect x="${tx}" y="${ty + 2}" width="${tw}" height="178" rx="4" fill="#CFC7B6" opacity="0.35"/>`;
+      s += `<rect x="${tx}" y="${ty}" width="${tw}" height="178" rx="4" fill="#fff"/>`;
+      s += `<path d="M${tx} ${ty + 30}V${ty + 4}Q${tx} ${ty} ${tx + 4} ${ty}H${tx + tw - 4}Q${tx + tw} ${ty} ${tx + tw} ${ty + 4}V${ty + 30}Z" fill="#EAE4D7"/>`;
+      s += `<path d="M${tx} ${ty + 30}V${ty + 4}Q${tx} ${ty} ${tx + 4} ${ty}H${tx + tw - 4}Q${tx + tw} ${ty} ${tx + tw} ${ty + 4}V${ty + 30}Z" fill="url(#cardTopSheen)" pointer-events="none"/>`;
+
+      const rows = [
+        { s: 's_0', span: '[0, 10)', oj: '30 toks', ij: '0.900', mult: '0.50x', rj: '0.450', wj: 0.15, band: 'LOW', k: 'g' },
+        { s: 's_1', span: '[10, 20)', oj: '20 toks', ij: '0.900', mult: '0.75x', rj: '0.675', wj: 0.50, band: 'MID', k: 'a' },
+        { s: 's_2', span: '[20, 30)', oj: '10 toks', ij: '0.667', mult: '1.50x', rj: '1.000', wj: 1.00, band: 'HIGH', k: 'c' },
+        { s: 's_3', span: '[30, 40)', oj: '1 (floor)', ij: '0.023', mult: '15.0x', rj: '0.350', wj: 0.00, band: 'LOW', k: 'g' }
+      ];
+      rows.forEach((row, idx) => {
+        const y = ty + 30 + idx * 31;
+        const rowBg = row.k === 'c' ? '#F9D8D4' : idx % 2 === 1 ? '#FAF7F0' : '#FFFFFF';
+        s += `<rect x="${tx}" y="${y}" width="${tw}" height="31" fill="${rowBg}"/>`;
+        s += ln(tx, y, tx + tw, y, '#d8d6cd', 0.8);
+
+        const cx = i => (cBounds[i] + cBounds[i + 1]) / 2;
+        s += T(cx(0), y + 15.5, row.s, 'middle', 'ts m', 'font-size:10px;font-weight:700;fill:#161615');
+        s += T(cx(1), y + 15.5, row.span, 'middle', 'ts m', 'font-size:9.5px;fill:#52514d');
+        s += T(cx(2), y + 15.5, row.oj, 'middle', 'ts m', `font-size:9.5px;font-weight:600;fill:${V}`);
+        s += T(cx(3), y + 15.5, row.ij, 'middle', 'ts m', 'font-size:9.5px;fill:#161615');
+        s += T(cx(4), y + 15.5, row.mult, 'middle', 'ts m', `font-size:9.5px;font-weight:600;fill:${G}`);
+        s += T(cx(5), y + 15.5, row.rj, 'middle', 'ts m', `font-size:9.8px;font-weight:700;fill:${C[row.k][2]}`);
+
+        // Bar + value + band badge in column 6 (x=532..656)
+        const bx = 540, bw = 46;
+        s += `<rect x="${bx}" y="${y + 9}" width="${bw}" height="13" rx="2" fill="#EAE8E0" stroke="#b8b5aa" stroke-width=".7"/>`;
+        if (row.wj > 0) {
+          s += `<rect x="${bx}" y="${y + 9}" width="${Math.max(4, row.wj * bw)}" height="13" rx="2" fill="${row.k === 'c' ? '#EF9677' : row.k === 'a' ? '#FAC775' : '#b8b5aa'}" stroke="${C[row.k][1]}" stroke-width=".8"/>`;
+        }
+        s += T(bx + bw + 6, y + 15.5, row.wj.toFixed(2), 'start', 'ts m', `font-size:9px;font-weight:700;fill:${C[row.k][2]}`);
+        s += badge(618, y + 7.5, 32, 16, row.band, C[row.k][0], C[row.k][1], C[row.k][2], 7.8);
+      });
+
+      for (let i = 0; i < 7; i++) {
+        const cx = (cBounds[i] + cBounds[i + 1]) / 2;
+        s += T(cx, ty + 15, cLabels[i], 'middle', 'th', 'font-size:10.5px;fill:#161615');
+        if (i > 0) s += ln(cBounds[i], ty, cBounds[i], ty + 154, '#d8d6cd', 0.8);
+      }
+
+      s += `<path d="M${tx} ${ty + 154}V${ty + 174}Q${tx} ${ty + 178} ${tx + 4} ${ty + 178}H${tx + tw - 4}Q${tx + tw} ${ty + 178} ${tx + tw} ${ty + 174}V${ty + 154}Z" fill="#F2EDE2"/>`;
+      s += ln(tx, ty + 154, tx + tw, ty + 154, '#8a8880', 0.9);
+      s += `<rect x="${tx}" y="${ty}" width="${tw}" height="178" rx="4" fill="none" stroke="#8a8880" stroke-width="1.1"/>`;
+      s += T(tx + tw / 2, ty + 166, 'Mean opportunity O_bar = (30 + 20 + 10 + 0) / 4 = 15.0   ·   Percentile cutoffs: low < P38, mid [P38, P78), high >= P78', 'middle', 'ts m', 'font-size:8.8px;font-weight:600;fill:#52514d');
+
+      return [518, 'Three-stage max-pooling reduction and causal opportunity correction', s, ''];
+    })();
+
+    // ============================================================================
+    // FIGURE 3: RESIDUAL STREAM DELTA CAPTURE & PER-HEAD O_PROJ DECOMPOSITION
+    // ============================================================================
+    const F_DELTA = (() => {
+      const { C, T, P, ln, TX, box, hdrBox } = HX;
+      const G = '#0F6E56', R = '#993C1D', V = '#534AB7', OR = '#BA7517', gray = 'fill:#52514d;font-size:11.5px';
+      const r = String.raw;
+      let s = '';
+
+      // Panel: Inside Decoder Layer l Forward Hooks
+      s += T(24, 25, 'Decoder Layer Forward Hook Instrumentation & Per-Head Output Projection', 'start', 'th');
+
+      // Outer Decoder Layer Frame (y=52..266)
+      s += hdrBox(24, 52, 632, 214, 24, '#F8F7F2', '#EAE8E0', '#8a8880', 1.1, 5);
+      s += T(340, 64, 'DECODER LAYER l in [0 .. L-1]   (L = 28, H = 12, H_kv = 2, d_h = 128, D = 1536)', 'middle', 'ts m', 'font-size:9.2px;font-weight:700;fill:#222220');
+
+      // Left: Pre-hook capturing residual_input (x=38..164, y=92..172)
+      s += box(38, 92, 126, 80, C.p[0], V, 1.1);
+      s += T(101, 109, 'Layer Pre-Hook', 'middle', 'th', `font-size:11.5px;fill:${C.p[2]}`);
+      s += T(101, 127, 'residual_input', 'middle', 'ts m', `font-size:9px;font-weight:700;fill:${C.p[2]}`);
+      s += `<rect x="48" y="138" width="106" height="24" rx="3" fill="#fff" stroke="${V}" stroke-width=".8"/>`;
+      s += TX(101, 150, r`x_{\ell} \in \mathbb{R}^{T \times D}`, 10.5, 'middle', '#161615');
+
+      // Residual bypass line across bottom of layer box
+      s += ln(101, 172, 101, 242, V, 1.4, '4 3');
+      s += ln(101, 242, 594, 242, V, 1.4, '4 3');
+      s += P('M594 242V206', 1, 'av');
+      s += `<rect x="190" y="233" width="310" height="18" rx="3" fill="#E6DEFA" stroke="${V}" stroke-width=".8"/>`;
+      s += T(345, 242, 'residual stream bypass x_l ([T, 1536])', 'middle', 'ts m', `font-size:8.8px;font-weight:700;fill:${C.p[2]}`);
+
+      // Arrow into Self-Attention
+      s += P('M164 132H190');
+
+      // Middle-Left: Self-Attention GQA + Value States (x=192..342, y=84..224)
+      s += hdrBox(192, 84, 150, 140, 22, '#FFFFFF', '#EAE8E0', '#5F5E5A', 1.1, 4);
+      s += T(267, 95, 'Self-Attention Hook', 'middle', 'th', 'font-size:11px');
+
+      s += box(202, 112, 130, 48, C.a[0], OR, 0.95);
+      s += T(267, 125, 'attn_weights', 'middle', 'ts m', `font-size:9px;font-weight:700;fill:${C.a[2]}`);
+      s += TX(267, 145, r`\alpha \in \mathbb{R}^{H \times T \times T}`, 10.2, 'middle', '#161615');
+
+      s += box(202, 168, 130, 48, C.t[0], G, 0.95);
+      s += T(267, 181, 'v_proj + repeat_kv', 'middle', 'ts m', `font-size:9px;font-weight:700;fill:${C.t[2]}`);
+      s += TX(267, 201, r`v \in \mathbb{R}^{H \times T \times d_h}`, 10.2, 'middle', '#161615');
+
+      // Arrows to Per-Head O_Proj Decomposition
+      s += P('M342 136H366');
+      s += P('M342 192H366');
+
+      // Middle-Right: Exact o_proj Einsum Decomposition (x=368..520, y=84..224)
+      s += hdrBox(368, 84, 152, 140, 22, '#FFFFFF', C.c[0], R, 1.1, 4);
+      s += T(444, 95, 'o_proj Decomposition', 'middle', 'th', `font-size:11px;fill:${C.c[2]}`);
+
+      s += box(378, 112, 132, 48, '#fff', R, 0.95);
+      s += T(444, 125, 'token_write_norms', 'middle', 'ts m', `font-size:8.8px;font-weight:700;fill:${C.c[2]}`);
+      s += TX(444, 146, r`\|\alpha_{h,i,j}\, W_O^{(h)} v_{h,j}\|_2`, 10, 'middle', '#161615');
+
+      s += box(378, 168, 132, 48, '#fff', R, 0.95);
+      s += T(444, 181, 'head_deltas [H, T, D]', 'middle', 'ts m', `font-size:8.8px;font-weight:700;fill:${C.c[2]}`);
+      s += TX(444, 202, r`\Delta_{h,t} = W_O^{(h)}(\alpha v)_{h,t}`, 10, 'middle', '#161615');
+
+      // Right: Post-Attention Norm & Residual Add (x=544..642, y=92..204)
+      s += P('M520 148H542');
+      s += box(544, 92, 98, 112, C.t[0], G, 1.1);
+      s += T(593, 110, 'Post-Attn Norm', 'middle', 'th', `font-size:10.5px;fill:${C.t[2]}`);
+      s += TX(593, 131, r`\Delta_{\ell}^{\text{norm}}`, 10.8, 'middle', C.t[2]);
+      s += ln(554, 148, 632, 148, G, 0.8);
+      s += T(593, 164, 'Residual Out', 'middle', 'ts', 'font-size:9.5px;font-weight:700;fill:#161615');
+      s += TX(593, 185, r`x_{\ell} + \Delta_{\ell}^{\text{norm}}`, 10.2, 'middle', '#161615');
+
+      // Divider
+      s += ln(24, 282, 656, 282, '#b8b5aa', 1.2);
+
+      // Panel: Derived Embeddings Delta Inspection Modes
+      s += T(24, 308, 'Sentence-Level Embeddings Delta Modes Derived from Cached Memmaps', 'start', 'th');
+
+      const modes = [
+        { k: 't', x: 24, title: 'Net Write', sub: 'deltaNorm', eq: r`\|\Delta_{\ell,s}^{\text{norm}}\|_2`, l1: 'Sentence L2 write', l2: 'into residual stream' },
+        { k: 'a', x: 152, title: 'Distance Split', sub: 'local / med / global', eq: r`d \le 1 \mid 2..3 \mid \ge 4`, l1: 'Splits incoming writes', l2: 'by sentence distance' },
+        { k: 'c', x: 280, title: 'Composition', sub: 'top-k sources', eq: r`W_{\ell}[p,\, q]`, l1: 'Ranks upstream', l2: 'source sentences' },
+        { k: 'p', x: 408, title: 'Layer Drift', sub: 'driftNorm', eq: r`\|r_{\ell,s} - r_{\ell-1,s}\|_2`, l1: 'Measures cross-layer', l2: 'shift & peakLayer' },
+        { k: 'g', x: 536, title: 'Flow Map', sub: 'directed edges', eq: r`s_q \xrightarrow{w} s_p`, l1: 'Draws top residual', l2: 'write arcs in gutter' }
+      ];
+
+      modes.forEach(m => {
+        const col = C[m.k];
+        s += hdrBox(m.x, 336, 120, 120, 25, '#FAF9F5', col[0], col[1], 1.1, 4);
+        s += T(m.x + 60, 348.5, m.title, 'middle', 'th', `font-size:10.8px;fill:${col[2]}`);
+        s += T(m.x + 60, 373, m.sub, 'middle', 'ts m', 'font-size:8.6px;fill:#52514d');
+        s += `<rect x="${m.x + 8}" y="385" width="104" height="26" rx="3" fill="#fff" stroke="${col[1]}" stroke-width=".75"/>`;
+        s += TX(m.x + 60, 398, m.eq, 9.8, 'middle', '#161615');
+        s += T(m.x + 60, 424, m.l1, 'middle', 'ts', 'font-size:9.2px;fill:#363633');
+        s += T(m.x + 60, 439, m.l2, 'middle', 'ts', 'font-size:9.2px;fill:#363633');
+      });
+
+      return [470, 'Residual stream delta capture and five sentence inspection modes', s, ''];
+    })();
+
+    // ============================================================================
+    // FIGURE 4: FLICKER-FREE SURFACE RECONCILIATION & BEZIER ARC GEOMETRY
+    // ============================================================================
+    const F_SURF = (() => {
+      const { C, T, P, ln, TX, card, box, badge } = HX;
+      const G = '#0F6E56', R = '#993C1D', V = '#534AB7', OR = '#BA7517', gray = 'fill:#52514d;font-size:11.5px';
+      const r = String.raw;
+      let s = '';
+
+      // Panel: In-Place DOM Reconciliation Pipeline
+      s += T(24, 26, 'Flicker-Free ContentEditable DOM Reconciliation & Synchronous Measurement', 'start', 'th');
+
+      // Left: Segment Builder (x=36..184, w=148)
+      s += box(36, 66, 148, 54, C.g[0], C.g[1], 1.1);
+      s += T(110, 83, 'Segment Builder', 'middle', 'th', `font-size:11.8px;fill:${C.g[2]}`);
+      s += T(110, 101, 'buildPlainTextSegments', 'middle', 'ts m', 'font-size:8.6px;fill:#52514d');
+
+      s += P('M184 93H208');
+
+      // Middle: Decision Gate (x=210..364, w=154)
+      s += box(210, 66, 154, 54, C.a[0], OR, 1.1);
+      s += T(287, 83, 'DOM Segment Match?', 'middle', 'th', `font-size:11.5px;fill:${C.a[2]}`);
+      s += T(287, 101, 'same count & text', 'middle', 'ts m', 'font-size:8.8px;fill:#52514d');
+
+      // Fast Path (Top Right: x=400..632, w=232)
+      s += P('M364 80H398', 0, 'ag');
+      s += T(381, 69, 'YES', 'middle', 'ts m', `font-size:8.5px;font-weight:700;fill:${G}`);
+      s += box(400, 58, 232, 42, C.t[0], G, 1.1);
+      s += T(516, 72, 'Fast Path: Mutate Attributes In-Place', 'middle', 'th', `font-size:11px;fill:${C.t[2]}`);
+      s += T(516, 88, 'mutates class, style, data-* only', 'middle', 'ts m', 'font-size:8.6px;fill:#04342C');
+
+      // Structural Rebuild Path (Bottom Right: x=400..632, w=232)
+      s += P('M364 106L398 120', 0, 'ar');
+      s += T(379, 124, 'NO', 'middle', 'ts m', `font-size:8.5px;font-weight:700;fill:${R}`);
+      s += box(400, 106, 232, 42, C.c[0], R, 1.1);
+      s += T(516, 120, 'Structural Path: innerHTML + Caret Restore', 'middle', 'th', `font-size:11px;fill:${C.c[2]}`);
+      s += T(516, 136, 'saves offsets -> innerHTML -> restore', 'middle', 'ts m', 'font-size:8.5px;fill:#4A1B0C');
+
+      // Converge both paths to useLayoutEffect Measurement
+      s += ln(632, 79, 646, 79, G, 1.3);
+      s += P('M646 79V182H634', 0, 'ag');
+      s += P('M516 148V160');
+      s += box(210, 162, 422, 40, C.p[0], V, 1.1);
+      s += T(421, 175, 'Synchronous useLayoutEffect Geometry Pass (Before Browser Paint)', 'middle', 'th', `font-size:11.5px;fill:${C.p[2]}`);
+      s += T(421, 191, 'reads span.getClientRects() -> computes (leftX, rightX, midY)', 'middle', 'ts m', 'font-size:8.8px;fill:#26215C');
+
+      // Divider
+      s += ln(24, 228, 656, 228, '#b8b5aa', 1.2);
+
+      // Panel: Right-Gutter Quadratic Bezier Arc Geometry & Distance Filtering
+      s += T(24, 254, 'Earlier-to-Later Quadratic Bezier Arc Geometry & Long-Distance Filtering', 'start', 'th');
+
+      // Left: Unified Document Surface + Right-Gutter Overlay Box (x=24..394, y=282..454)
+      s += box(24, 282, 370, 172, '#F8F7F2', '#8a8880', 1.1);
+      s += ln(268, 282, 268, 454, '#b8b5aa', 1, '3 3');
+      s += T(38, 298, 'Editable Text Column', 'start', 'th', 'font-size:11px');
+      s += T(331, 298, 'Right Gutter SVG', 'middle', 'th', `font-size:11px;fill:${R}`);
+
+      // Sentence s_0 (Source: x=36..260, y=314..342)
+      s += box(36, 314, 224, 28, C.a[0], OR, 1.1);
+      s += T(44, 328, 's_0 : "The encoder maps tokens."', 'start', 'ts m', `font-size:8.8px;font-weight:600;fill:${C.a[2]}`);
+      s += `<circle cx="260" cy="328" r="3.8" fill="${R}"/>`;
+      s += T(274, 316, '(x1, y1)', 'start', 'ts m', `font-size:8.2px;font-weight:700;fill:${R}`);
+
+      // Sentence s_1 (Skipped when longDistanceFactor >= 1: x=36..260, y=356..384)
+      s += box(36, 356, 224, 28, C.g[0], '#9e9b90', 0.9);
+      s += T(44, 370, 's_1 : "Layers refine states."', 'start', 'ts m', 'font-size:8.8px;fill:#52514d');
+      s += badge(206, 362, 48, 16, 'd=1 skip', '#fff', '#8a8880', '#52514d', 7.8);
+
+      // Sentence s_2 (Target: x=36..260, y=398..426)
+      s += box(36, 398, 224, 28, C.c[0], R, 1.2);
+      s += T(44, 412, 's_2 : "Readout cites input."', 'start', 'ts m', `font-size:8.8px;font-weight:700;fill:${C.c[2]}`);
+      s += `<circle cx="260" cy="412" r="3.8" fill="${R}"/>`;
+      s += T(274, 426, '(x2, y2)', 'start', 'ts m', `font-size:8.2px;font-weight:700;fill:${R}`);
+
+      // Quadratic Bezier Curve from (260, 328) with control point P1=(324, 366) to (264, 412)
+      s += ln(260, 328, 324, 366, '#8a8880', 0.9, '3 3');
+      s += ln(260, 412, 324, 366, '#8a8880', 0.9, '3 3');
+      s += `<path d="M260 328 Q 324 366 264 412" fill="none" stroke="${R}" stroke-width="2.2" marker-end="url(#ar)"/>`;
+      s += `<circle cx="324" cy="366" r="4" fill="${V}" stroke="#fff" stroke-width="1"/>`;
+      s += badge(331, 357, 56, 18, 'ctrlX, ctrlY', '#E6DEFA', V, '#26215C', 8);
+
+      // Right: Exact Bezier & Opacity Equations Card (x=408..656, y=282..454)
+      s += card(408, 282, 248, 172, '#E6DEFA', V);
+      s += T(420, 300, 'Right-Gutter Curve Parametrization', 'start', 'th', `font-size:11.5px;fill:${C.p[2]}`);
+
+      s += box(420, 312, 224, 130, '#fff', V, 0.95);
+      s += TX(430, 330, r`\text{bow} = \min(0.35 \cdot L_{12},\; 160)`, 10.2, 'start', '#161615');
+      s += TX(430, 355, r`\text{ctrlX} = \max(x_1, x_2) + \text{bow}`, 10.2, 'start', C.p[2]);
+      s += TX(430, 380, r`\text{ctrlY} = \tfrac{1}{2}(y_1 + y_2) - 0.08(y_2 - y_1)`, 10.2, 'start', C.p[2]);
+      s += ln(430, 398, 634, 398, '#d8d6cd', 0.8);
+      s += T(430, 412, 'Stroke width: 1 + norm * 2.2', 'start', 'ts m', 'font-size:8.8px;fill:#363633');
+      s += T(430, 428, 'Hover dim: non-connected -> 0.08', 'start', 'ts m', 'font-size:8.8px;fill:#52514d');
+
+      return [468, 'Flicker-free DOM reconciliation and quadratic Bezier arc geometry', s, ''];
+    })();
+
+    // ============================================================================
+    // FIGURE 5: POSTGRESQL + PGVECTOR RESIDUAL STORE & CROSS-LAYER QUERIES
+    // ============================================================================
+    const F_PG = (() => {
+      const { C, T, P, ln, TX, box, hdrBox, badge } = HX;
+      const G = '#0F6E56', V = '#534AB7', gray = 'fill:#52514d;font-size:11.5px';
+      const r = String.raw;
+      let s = '';
+
+      // Panel: Sentence Mean-Pooling & Relational Vector Schema
+      s += T(24, 26, 'Token-to-Sentence Mean Pooling & PostgreSQL + pgvector Relational Schema', 'start', 'th');
+
+      // Left: Mean Pooling Box (x=36..206, y=60..186)
+      s += box(36, 60, 170, 126, C.p[0], V, 1.1);
+      s += T(121, 78, 'Sentence Mean-Pooling', 'middle', 'th', `font-size:11.5px;fill:${C.p[2]}`);
+      s += T(121, 95, '_mean_pool(arr, ranges)', 'middle', 'ts m', 'font-size:8.6px;fill:#52514d');
+      s += `<rect x="46" y="107" width="150" height="32" rx="3" fill="#fff" stroke="${V}" stroke-width=".85"/>`;
+      s += TX(121, 123, r`\bar{e}_{\ell,k} = \frac{1}{|s_k|}\sum_{t \in s_k} x_{\ell,t}`, 10.5, 'middle', '#161615');
+      s += T(121, 154, '[L, T, 1536] -> [L, S, 1536]', 'middle', 'ts m', `font-size:8.6px;font-weight:700;fill:${C.p[2]}`);
+      s += T(121, 171, 'residual_input & attn_delta', 'middle', 'ts m', 'font-size:8.2px;fill:#52514d');
+
+      s += P('M206 123H228');
+
+      // Table 1: documents (x=230..350, y=60..186)
+      s += hdrBox(230, 60, 120, 126, 24, '#FAF9F5', C.g[0], '#5F5E5A', 1.1, 4);
+      s += T(290, 72, 'documents', 'middle', 'ts m', 'font-size:9.8px;font-weight:700;fill:#161615');
+      s += T(240, 98, 'PK doc_id (UUID)', 'start', 'ts m', 'font-size:8.8px;font-weight:700;fill:#161615');
+      s += T(240, 118, '   title', 'start', 'ts m', 'font-size:8.8px;fill:#52514d');
+      s += T(240, 138, '   raw_text', 'start', 'ts m', 'font-size:8.8px;fill:#52514d');
+      s += T(240, 158, '   model_name', 'start', 'ts m', 'font-size:8.8px;fill:#52514d');
+
+      s += P('M350 123H372');
+
+      // Table 2: sentences (x=374..494, y=60..186)
+      s += hdrBox(374, 60, 120, 126, 24, '#FAF9F5', C.g[0], '#5F5E5A', 1.1, 4);
+      s += T(434, 72, 'sentences', 'middle', 'ts m', 'font-size:9.8px;font-weight:700;fill:#161615');
+      s += T(384, 98, 'PK sentence_id', 'start', 'ts m', 'font-size:8.8px;font-weight:700;fill:#161615');
+      s += T(384, 118, 'FK doc_id', 'start', 'ts m', 'font-size:8.8px;fill:#52514d');
+      s += T(384, 138, '   sentence_idx', 'start', 'ts m', 'font-size:8.8px;fill:#52514d');
+      s += T(384, 158, '   token_start/end', 'start', 'ts m', 'font-size:8.5px;fill:#52514d');
+
+      s += P('M494 123H516');
+
+      // Table 3: sentence_layer_states (x=518..644, y=60..186)
+      s += hdrBox(518, 60, 126, 126, 24, C.t[0], '#9FE1CB', G, 1.1, 4);
+      s += T(581, 72, 'sentence_layer_states', 'middle', 'ts m', `font-size:8.5px;font-weight:700;fill:${C.t[2]}`);
+      s += T(526, 98, 'FK sentence_id', 'start', 'ts m', 'font-size:8.6px;font-weight:700;fill:#161615');
+      s += T(526, 116, '   layer (0..27)', 'start', 'ts m', 'font-size:8.6px;fill:#04342C');
+      s += T(526, 134, '   stream_type', 'start', 'ts m', 'font-size:8.6px;fill:#04342C');
+      s += T(526, 152, '   VECTOR(1536)', 'start', 'ts m', `font-size:8.6px;font-weight:700;fill:${C.t[2]}`);
+      s += T(526, 170, 'HNSW (m=16, ef=64)', 'start', 'ts m', 'font-size:8.2px;fill:#52514d');
+
+      // Divider
+      s += ln(24, 212, 656, 212, '#b8b5aa', 1.2);
+
+      // Panel: Cross-Layer ANN Search & Representational Drift Queries
+      s += T(24, 238, 'Cross-Layer HNSW Cosine Similarity Search & Adjacent-Layer Drift', 'start', 'th');
+
+      // Left Card: Cross-Layer Similarity Query
+      s += box(24, 266, 308, 96, '#E6DEFA', V, 1.1);
+      s += badge(36, 276, 158, 18, 'CROSS-LAYER ANN SEARCH', '#CECBF6', V, C.p[2], 8.5);
+      s += T(36, 304, 'Fetches query vector at source_layer and scans', 'start', 'ts', 'font-size:10px;fill:#222220');
+      s += T(36, 318, 'target_layer via HNSW cosine distance:', 'start', 'ts', 'font-size:10px;fill:#222220');
+      s += `<rect x="36" y="328" width="284" height="24" rx="3" fill="#fff" stroke="${V}" stroke-width=".9"/>`;
+      s += TX(178, 340, r`\text{sim}(q, s) = 1 - \text{dist}_{\cos}(e_{\ell_{\text{dst}}, s},\; q_{\ell_{\text{src}}})`, 10.2, 'middle', C.p[2]);
+
+      // Right Card: Adjacent-Layer Drift Query
+      s += box(348, 266, 308, 96, '#D4EFE1', G, 1.1);
+      s += badge(360, 276, 170, 18, 'ADJACENT-LAYER DRIFT SCAN', '#9FE1CB', G, C.t[2], 8.5);
+      s += T(360, 304, 'Self-joins sentence_layer_states on layer l and l+1', 'start', 'ts', 'font-size:10px;fill:#222220');
+      s += T(360, 318, 'to measure per-sentence representational stability:', 'start', 'ts', 'font-size:10px;fill:#222220');
+      s += `<rect x="360" y="328" width="284" height="24" rx="3" fill="#fff" stroke="${G}" stroke-width=".9"/>`;
+      s += TX(502, 340, r`\text{stability}(\ell) = 1 - \text{dist}_{\cos}(e_{\ell, s},\; e_{\ell+1, s})`, 10.2, 'middle', C.t[2]);
+
+      return [376, 'PostgreSQL pgvector schema and cross-layer similarity queries', s, ''];
+    })();
+
+    // ============================================================================
+    // REGISTRY & SECTIONED PRESENTATION RENDERER
+    // ============================================================================
+    const FIG = {
+      topo: F_TOPO,
+      score: F_SCORE,
+      delta: F_DELTA,
+      surf: F_SURF,
+      pg: F_PG
+    };
+
+    const SECTIONS = [
+      {
+        id: 'sec-1',
+        kicker: 'Section I',
+        title: 'Execution Topology & Subword-to-Sentence Alignment',
+        desc: 'A single eager forward pass executes on <code>Qwen/Qwen2.5-1.5B</code> per edit and memoizes both attention tensors and memory-mapped residual stream states by normalized document text. Subword tokens are aligned to <code>NLTK Punkt</code> sentences and mapped back to exact character intervals <code>[sourceStart, sourceEnd]</code>.',
+        figs: ['topo']
+      },
+      {
+        id: 'sec-2',
+        kicker: 'Section II',
+        title: 'Three-Stage Max-Pooling & Causal Opportunity Correction',
+        desc: 'The 4D token attention tensor is reduced to a directional sentence matrix via peak pooling across layers, token spans, and heads. Incoming sentence sums are then rescaled by downstream token opportunity <code>max(T - end_tok, 1)</code> to eliminate early-position causal bias.',
+        figs: ['score']
+      },
+      {
+        id: 'sec-3',
+        kicker: 'Section III',
+        title: 'Residual Stream Delta Capture & Per-Head Output Projection',
+        desc: 'Forward hooks on each decoder layer capture the pre-layer residual input and decompose <code>self_attn.o_proj</code> per head via <code>einsum</code> before applying <code>post_attention_layernorm</code>. Five sentence-level delta modes are computed directly from the cached <code>.npy</code> memmaps.',
+        figs: ['delta']
+      },
+      {
+        id: 'sec-4',
+        kicker: 'Section IV',
+        title: 'Flicker-Free Surface Rendering & Vector Persistence',
+        desc: '<code>render.tsx</code> updates sentence span attributes in-place when text boundaries are unchanged and measures anchor rectangles synchronously in <code>useLayoutEffect</code> to draw right-gutter quadratic Bezier arcs. Mean-pooled sentence vectors can also be persisted to PostgreSQL + <code>pgvector</code> for HNSW cross-layer search.',
+        figs: ['surf', 'pg']
+      }
+    ];
+
+    const order = SECTIONS.flatMap(s => s.figs);
+
+    document.getElementById('f').innerHTML = SECTIONS.map(sec => {
+      const figsHtml = sec.figs.map(k => {
+        const i = order.indexOf(k), [h, t, b] = FIG[k];
+        const stageBg = `<rect x="0" y="0" width="680" height="${h}" rx="6" fill="#FAF7F0"/>` +
+          `<rect x="0" y="0" width="680" height="${h}" rx="6" fill="url(#archGrid)" opacity="0.72"/>` +
+          `<rect x="0" y="0" width="680" height="${h}" rx="6" fill="url(#softStageGlow)"/>`;
+        return `<figure id="fig-${i + 1}"><svg viewBox="0 0 680 ${h}" role="img" aria-label="${t}">${stageBg}${b}</svg></figure>`;
+      }).join('');
+      return `<section class="sec" id="${sec.id}"><h2>${sec.title}</h2><p class="sec-desc">${sec.desc}</p>${figsHtml}</section>`;
+    }).join('');
+  </script>
+  <script>
+    window.MathJax = { svg: { fontCache: 'none' }, startup: { typeset: false, ready() { MathJax.startup.defaultReady(); MathJax.startup.promise.then(texFigs) } } };
+    function texFigs() { document.querySelectorAll('g.tx').forEach(g => { try { const d = g.dataset, S = JSON.parse(decodeURIComponent(d.t)), k = d.fs / 1000, P = S.map(q => { const v = MathJax.tex2svg(q[0], { display: false }).querySelector('svg'); return { v, b: v.getAttribute('viewBox').split(/\s+/).map(Number), c: q[1] } }), W = P.reduce((a, p) => a + p.b[2] * k, 0) + 2 * (P.length - 1), base = +d.y + .28 * d.fs; let x = +d.x - (d.a == 'middle' ? W / 2 : d.a == 'end' ? W : 0); g.replaceChildren(...P.map(p => { const w = p.b[2] * k, h = p.b[3] * k, v = p.v; v.setAttribute('x', x); v.setAttribute('y', S.length > 1 ? base + p.b[1] * k : +d.y - h / 2); v.setAttribute('width', w); v.setAttribute('height', h); v.setAttribute('style', 'overflow:visible;color:' + p.c); x += w + 2; return v })) } catch (e) { } }) }
+  </script>
+  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg-full.js"></script>
+</body>
+
+</html>
