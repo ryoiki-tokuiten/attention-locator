@@ -1,9 +1,8 @@
 import React, { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Compass, FileText, GitBranch, Globe, LoaderCircle, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, SwatchBook, Target } from 'lucide-react';
+import { GitBranch, Globe, LoaderCircle, SlidersHorizontal, SwatchBook, Target } from 'lucide-react';
 
-import { GlobalImagePreviewModal, RenderMathMarkdown, type AttentionArcConnection } from '../RenderMathMarkdown';
+import { Render, type AttentionArcConnection } from '../render';
 import AttentionExplorer, { type AttentionTab } from './AttentionExplorer';
-import DeltaVectorFlowCanvas from './DeltaVectorFlowCanvas';
 import { asFiniteNumber, attentionColorForWeight, clamp } from './utils';
 import type {
     DeltaVisualizationMode,
@@ -16,20 +15,11 @@ import type {
 } from './types/semantic';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
-const INITIAL_MARKDOWN = `# SAVIS Attention Markdown
+const INITIAL_MARKDOWN = `Attention-Locator Workspace.
 
-This prototype renders markdown with sentence-level attention emphasis and lets you inspect the underlying attention patterns.
+This prototype renders plain text with sentence-level attention emphasis and lets you inspect the underlying attention patterns.
 
-## What changed
-
-- The semantic renderer still highlights salient sentences.
-- Sentence attention now comes from a full-context causal model pass.
-- You can switch from the rendered view into sentence-level and token-level attention inspection.
-
-> The goal is not just pretty markdown. The goal is seeing how the model routes attention through the document.
-
-Inline math still works: $ISA(S_a, S_b) = \\max_{h \\in H} \\beta_h(S_a, S_b)$.
-`;
+Sentence attention comes from a full-context causal model pass. You can type or paste directly inside this surface, draw sentence-to-sentence attention arcs, or switch into sentence-level and token-level attention inspection.`;
 
 async function postJson(path: string, body: unknown, signal: AbortSignal, errorLabel: string): Promise<unknown> {
     const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -51,45 +41,39 @@ async function postJson(path: string, body: unknown, signal: AbortSignal, errorL
 
 const VIEW_TABS: Array<{ id: AttentionTab; label: string }> = [
     { id: 'rendered', label: 'Rendered' },
-    { id: 'sentence', label: 'Sentence view' },
-    { id: 'token', label: 'Token view' },
+    { id: 'sentence', label: 'Sentence View' },
+    { id: 'token', label: 'Token View' },
 ];
 
 const RENDER_SURFACE_MODES = [
-    { id: 'semantic', label: 'Semantic surface' },
-    { id: 'delta', label: 'Delta embedding based visualization' },
+    { id: 'semantic', label: 'Semantic Surface' },
+    { id: 'delta', label: 'Embeddings Delta' },
 ] as const;
 
 const DELTA_RENDER_MODES: Array<{ id: DeltaVisualizationMode; label: string; icon: React.ReactNode; description: string }> = [
     {
-        id: 'vector-flow',
-        label: 'Vector flow',
-        icon: <Compass size={15} />,
-        description: 'Projects each sentence and its attention delta into 2D, scales them with bounded lengths, and chains the composed vectors across the canvas.',
-    },
-    {
         id: 'local-global',
         label: 'Local vs global',
-        icon: <Globe size={15} />,
-        description: 'Shows whether a sentence is shaped more by nearby structure or longer-range context.',
+        icon: <Globe size={16} strokeWidth={1.5} />,
+        description: 'Shows whether a sentence is shaped more by nearby structure or longer-range context',
     },
     {
         id: 'flow-map',
         label: 'Flow map',
-        icon: <GitBranch size={15} />,
-        description: 'Draws sentence-to-sentence write paths so you can follow where context is flowing from.',
+        icon: <GitBranch size={16} strokeWidth={1.5} />,
+        description: 'Draws sentence-to-sentence write paths to trace where context flows from',
     },
     {
         id: 'composition',
         label: 'Composition',
-        icon: <SwatchBook size={15} />,
-        description: 'Colors each sentence by the strongest source sentences that most contributed to it.',
+        icon: <SwatchBook size={16} strokeWidth={1.5} />,
+        description: 'Colors each sentence by the upstream sentences that contributed most to it',
     },
     {
         id: 'drift',
         label: 'Drift',
-        icon: <Target size={15} />,
-        description: 'Highlights sentences whose representations are being rewritten most strongly across depth.',
+        icon: <Target size={16} strokeWidth={1.5} />,
+        description: 'Highlights sentences whose representations change most across transformer depth',
     },
 ] as const;
 
@@ -190,17 +174,15 @@ function sanitizeSentencePairAttentionPayload(payload: unknown): SentencePairAtt
 }
 
 function asDeltaMode(value: unknown): DeltaVisualizationMode {
-    return value === 'vector-flow' || value === 'flow-map' || value === 'composition' || value === 'drift' || value === 'local-global'
+    return value === 'flow-map' || value === 'composition' || value === 'drift' || value === 'local-global'
         ? value
-        : 'vector-flow';
+        : 'local-global';
 }
 
 function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualizationPayload {
     const candidate = asRecord(payload);
     const sentences = Array.isArray(candidate.sentences) ? candidate.sentences : [];
     const globalTopEdges = Array.isArray(candidate.globalTopEdges) ? candidate.globalTopEdges : [];
-    const vectorFlow = asRecord(candidate.vectorFlow);
-    const vectorFlowBounds = asRecord(vectorFlow.bounds);
 
     return {
         analysisText: asString(candidate.analysisText),
@@ -213,7 +195,6 @@ function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualization
         sentences: sentences.map((item, index) => {
             const sentenceCandidate = asRecord(item);
             const topSources = Array.isArray(sentenceCandidate.topSources) ? sentenceCandidate.topSources : [];
-            const vectorFlowCandidate = asRecord(sentenceCandidate.vectorFlow);
             return {
                 index: asFiniteNumber(sentenceCandidate.index, index),
                 sentence: asString(sentenceCandidate.sentence),
@@ -230,23 +211,6 @@ function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualization
                 driftNorm: clamp(asFiniteNumber(sentenceCandidate.driftNorm, 0)),
                 peakLayer: asFiniteNumber(sentenceCandidate.peakLayer, 0),
                 peakLayerRatio: clamp(asFiniteNumber(sentenceCandidate.peakLayerRatio, 0)),
-                vectorFlow: sentenceCandidate.vectorFlow && typeof sentenceCandidate.vectorFlow === 'object'
-                    ? {
-                        anchorX: asFiniteNumber(vectorFlowCandidate.anchorX, 0),
-                        anchorY: asFiniteNumber(vectorFlowCandidate.anchorY, 0),
-                        sentenceEndX: asFiniteNumber(vectorFlowCandidate.sentenceEndX, 0),
-                        sentenceEndY: asFiniteNumber(vectorFlowCandidate.sentenceEndY, 0),
-                        updatedEndX: asFiniteNumber(vectorFlowCandidate.updatedEndX, 0),
-                        updatedEndY: asFiniteNumber(vectorFlowCandidate.updatedEndY, 0),
-                        sentenceAngle: asFiniteNumber(vectorFlowCandidate.sentenceAngle, 0),
-                        deltaAngle: asFiniteNumber(vectorFlowCandidate.deltaAngle, 0),
-                        deltaRelativeAngle: asFiniteNumber(vectorFlowCandidate.deltaRelativeAngle, 0),
-                        composedAngle: asFiniteNumber(vectorFlowCandidate.composedAngle, 0),
-                        sentenceMagnitude: asFiniteNumber(vectorFlowCandidate.sentenceMagnitude, 0),
-                        deltaMagnitude: asFiniteNumber(vectorFlowCandidate.deltaMagnitude, 0),
-                        composedMagnitude: asFiniteNumber(vectorFlowCandidate.composedMagnitude, 0),
-                    }
-                    : null,
                 topSources: topSources.map((source, sourceIndex) => {
                     const sourceCandidate = asRecord(source);
 
@@ -281,135 +245,44 @@ function sanitizeDeltaVisualizationPayload(payload: unknown): DeltaVisualization
                 color: asString(edgeCandidate.color, attentionColorForWeight(asFiniteNumber(edgeCandidate.scoreNorm, 0))),
             };
         }),
-        vectorFlow: candidate.vectorFlow && typeof candidate.vectorFlow === 'object'
-            ? {
-                projection: asString(vectorFlow.projection, 'pca'),
-                angleAmplification: asFiniteNumber(vectorFlow.angleAmplification, 36),
-                baseWeight: asFiniteNumber(vectorFlow.baseWeight, 1.2),
-                deltaWeight: asFiniteNumber(vectorFlow.deltaWeight, 0.55),
-                unitCircleRadius: asFiniteNumber(vectorFlow.unitCircleRadius, 1),
-                bounds: {
-                    minX: asFiniteNumber(vectorFlowBounds.minX, -1.5),
-                    maxX: asFiniteNumber(vectorFlowBounds.maxX, 1.5),
-                    minY: asFiniteNumber(vectorFlowBounds.minY, -1.5),
-                    maxY: asFiniteNumber(vectorFlowBounds.maxY, 1.5),
-                },
-            }
-            : {
-                projection: 'pca',
-                angleAmplification: 36,
-                baseWeight: 1.2,
-                deltaWeight: 0.55,
-                unitCircleRadius: 1,
-                bounds: { minX: -1.5, maxX: 1.5, minY: -1.5, maxY: 1.5 },
-            },
         warnings: asStringArray(candidate.warnings),
     };
-}
-
-function previewPillLabel(
-    activeTab: AttentionTab,
-    renderSurfaceMode: RenderSurfaceMode,
-    renderArcMode: RenderArcMode,
-    semanticWeights: SemanticWeight[],
-    documentAttention: DocumentAttentionPayload | null,
-    pairAttention: SentencePairAttentionPayload | null,
-    deltaVisualization: DeltaVisualizationPayload | null,
-    analysisError: string | null,
-    attentionError: string | null,
-    deltaVisualizationError: string | null,
-    isLoadingDocumentAttention: boolean,
-    isLoadingPairAttention: boolean,
-    isLoadingDeltaVisualization: boolean,
-) {
-    if (activeTab === 'rendered') {
-        if (renderSurfaceMode === 'delta') {
-            if (deltaVisualizationError) {
-                return 'Delta visualization unavailable';
-            }
-            if (isLoadingDeltaVisualization) {
-                return 'Building sentence flow surface';
-            }
-            return deltaVisualization ? `${deltaVisualization.sentenceCount} sentence surfaces mapped` : 'Delta surface ready on demand';
-        }
-        if (renderArcMode !== 'off') {
-            if (attentionError && !documentAttention) {
-                return 'Arc overlay unavailable';
-            }
-            if (isLoadingDocumentAttention) {
-                return 'Building sentence arcs';
-            }
-            return documentAttention ? `Arc graph ready · ${documentAttention.sentenceCount} sentences` : 'Arc overlay ready on demand';
-        }
-        return analysisError ? 'Backend unavailable, rendering without weights' : `${semanticWeights.length} sentence weights loaded`;
-    }
-
-    if (activeTab === 'sentence') {
-        if (attentionError) {
-            return 'Sentence map unavailable';
-        }
-        if (isLoadingDocumentAttention) {
-            return 'Computing full-document attention';
-        }
-        return documentAttention ? `${documentAttention.sentenceCount} sentences in focus` : 'Sentence map ready when requested';
-    }
-
-    if (attentionError) {
-        return 'Token view unavailable';
-    }
-    if (isLoadingPairAttention) {
-        return 'Loading sentence pair tokens';
-    }
-    return pairAttention ? 'Inspecting selected sentence pair' : 'Choose a sentence pair first';
 }
 
 function previewActivityState(
     activeTab: AttentionTab,
     renderSurfaceMode: RenderSurfaceMode,
-    isInputPending: boolean,
     isAnalyzing: boolean,
     isLoadingDocumentAttention: boolean,
     isLoadingPairAttention: boolean,
     isLoadingDeltaVisualization: boolean,
     renderArcMode: RenderArcMode,
 ) {
-    if (isInputPending) {
-        return {
-            kicker: 'Live typing',
-            title: 'Preparing the next semantic pass',
-            description: 'Your text is already visible while the updated sentence weights queue in the background.',
-        };
-    }
-
     if (isAnalyzing) {
         return {
             kicker: 'Semantic refresh',
             title: 'Recomputing sentence emphasis',
-            description: 'We are refreshing the rendered pill intensities so the preview reflects the latest wording.',
         };
     }
 
     if (activeTab === 'rendered' && renderSurfaceMode === 'delta' && isLoadingDeltaVisualization) {
         return {
             kicker: 'Delta capture',
-            title: 'Building the sentence flow surface',
-            description: 'We are capturing per-layer delta writes and deriving sentence-level flow summaries for the new rendering mode.',
+            title: 'Building sentence flow surface',
         };
     }
 
     if (activeTab === 'rendered' && renderArcMode !== 'off' && isLoadingDocumentAttention) {
         return {
             kicker: 'Arc overlay',
-            title: 'Building sentence-to-sentence citations',
-            description: 'The full-document sentence graph is loading so the rendered preview can draw later-to-earlier arcs.',
+            title: 'Building sentence arcs',
         };
     }
 
     if (activeTab === 'sentence' && isLoadingDocumentAttention) {
         return {
             kicker: 'Attention map',
-            title: 'Building the sentence matrix',
-            description: 'The model is integrating full-document attention so the sentence view can open with fresh scores.',
+            title: 'Building sentence matrix',
         };
     }
 
@@ -417,7 +290,6 @@ function previewActivityState(
         return {
             kicker: 'Token drill-down',
             title: 'Resolving pair-level attention',
-            description: 'We are extracting token interactions for the selected sentence pair.',
         };
     }
 
@@ -467,29 +339,29 @@ function passesLongDistanceFilter(
         return true;
     }
 
-    return (sourceIndex - targetIndex) > options.minimumGap;
+    return (targetIndex - sourceIndex) > options.minimumGap;
 }
 
 function sortedPastConnections(
     sentenceAttention: number[][],
-    sourceIndex: number,
+    targetIndex: number,
     longDistanceOptions: LongDistanceOptions,
 ) {
-    const row = sentenceAttention[sourceIndex] ?? [];
+    const row = sentenceAttention[targetIndex] ?? [];
 
     return row
-        .map((score, targetIndex) => buildArcConnection(sourceIndex, targetIndex, score))
+        .map((score, sourceIndex) => buildArcConnection(sourceIndex, targetIndex, score))
         .filter((connection): connection is AttentionArcConnection => (
             Boolean(
                 connection &&
-                connection.targetIndex < sourceIndex &&
+                connection.sourceIndex < targetIndex &&
                 passesLongDistanceFilter(connection.sourceIndex, connection.targetIndex, longDistanceOptions),
             )
         ))
         .sort((left, right) => (
             right.score - left.score ||
-            left.targetIndex - right.targetIndex ||
-            left.sourceIndex - right.sourceIndex
+            left.sourceIndex - right.sourceIndex ||
+            left.targetIndex - right.targetIndex
         ));
 }
 
@@ -500,12 +372,12 @@ function topGlobalConnections(
 ) {
     const connections: AttentionArcConnection[] = [];
 
-    sentenceAttention.forEach((row, sourceIndex) => {
-        row.forEach((score, targetIndex) => {
+    sentenceAttention.forEach((row, targetIndex) => {
+        row.forEach((score, sourceIndex) => {
             const connection = buildArcConnection(sourceIndex, targetIndex, score);
             if (
                 connection &&
-                targetIndex < sourceIndex &&
+                sourceIndex < targetIndex &&
                 passesLongDistanceFilter(connection.sourceIndex, connection.targetIndex, longDistanceOptions)
             ) {
                 connections.push(connection);
@@ -525,24 +397,23 @@ function topGlobalConnections(
 const ATTENTION_LEGEND_ITEMS = [
     {
         label: 'Lower attention',
-        description: 'supporting or contextual text',
+        description: 'Supporting context',
         className: 'attention-stop-cool',
     },
     {
         label: 'Medium attention',
-        description: 'semantically connected text',
+        description: 'Connected structure',
         className: 'attention-stop-mid',
     },
     {
         label: 'Higher attention',
-        description: 'most salient model focus',
+        description: 'Primary model focus',
         className: 'attention-stop-hot',
     },
 ] as const;
 
 const App: React.FC = () => {
     const [content, setContent] = useState(INITIAL_MARKDOWN);
-    const [isEditorCollapsed, setIsEditorCollapsed] = useState(false);
     const [semanticWeights, setSemanticWeights] = useState<SemanticWeight[]>([]);
     const [health, setHealth] = useState<HealthPayload | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -568,7 +439,7 @@ const App: React.FC = () => {
     const [deltaVisualization, setDeltaVisualization] = useState<DeltaVisualizationPayload | null>(null);
     const [deltaVisualizationError, setDeltaVisualizationError] = useState<string | null>(null);
     const [isLoadingDeltaVisualization, setIsLoadingDeltaVisualization] = useState(false);
-    const [deltaVisualizationMode, setDeltaVisualizationMode] = useState<DeltaVisualizationMode>('vector-flow');
+    const [deltaVisualizationMode, setDeltaVisualizationMode] = useState<DeltaVisualizationMode>('local-global');
     const [selectedDeltaSentenceIndex, setSelectedDeltaSentenceIndex] = useState<number | null>(null);
     const [selectedDeltaEdgeId, setSelectedDeltaEdgeId] = useState<string | null>(null);
     const deferredContent = useDeferredValue(content);
@@ -576,6 +447,8 @@ const App: React.FC = () => {
     const latestDocumentRequestRef = useRef(0);
     const latestPairRequestRef = useRef(0);
     const latestDeltaVisualizationRequestRef = useRef(0);
+    const lastDocumentTextRef = useRef<string | null>(null);
+    const lastDeltaTextRef = useRef<string | null>(null);
 
     useEffect(() => {
         let isMounted = true;
@@ -609,19 +482,21 @@ const App: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        startTransition(() => {
-            setDocumentAttention(null);
-            setPairAttention(null);
-            setAttentionError(null);
-            setSelectedPair(null);
-            setManualArcSelection([]);
-            setFocusedArcSentence(null);
-            setSelectedArcId(null);
-            setDeltaVisualization(null);
-            setDeltaVisualizationError(null);
-            setSelectedDeltaSentenceIndex(null);
-            setSelectedDeltaEdgeId(null);
-        });
+        if (!deferredContent.trim()) {
+            startTransition(() => {
+                setDocumentAttention(null);
+                setPairAttention(null);
+                setAttentionError(null);
+                setSelectedPair(null);
+                setManualArcSelection([]);
+                setFocusedArcSentence(null);
+                setSelectedArcId(null);
+                setDeltaVisualization(null);
+                setDeltaVisualizationError(null);
+                setSelectedDeltaSentenceIndex(null);
+                setSelectedDeltaEdgeId(null);
+            });
+        }
     }, [deferredContent]);
 
     useEffect(() => {
@@ -727,6 +602,8 @@ const App: React.FC = () => {
         const controller = new AbortController();
         const requestId = latestDocumentRequestRef.current + 1;
         latestDocumentRequestRef.current = requestId;
+        const isTextEdit = lastDocumentTextRef.current !== null && lastDocumentTextRef.current !== deferredContent;
+        const debounceMs = isTextEdit ? 750 : 200;
 
         const timeoutId = window.setTimeout(async () => {
             setIsLoadingDocumentAttention(true);
@@ -740,6 +617,7 @@ const App: React.FC = () => {
                     'Attention analysis failed',
                 ));
                 if (latestDocumentRequestRef.current === requestId) {
+                    lastDocumentTextRef.current = deferredContent;
                     startTransition(() => {
                         setDocumentAttention(payload);
                         setAttentionError(null);
@@ -761,7 +639,7 @@ const App: React.FC = () => {
                     setIsLoadingDocumentAttention(false);
                 }
             }
-        }, 250);
+        }, debounceMs);
 
         return () => {
             controller.abort();
@@ -833,6 +711,8 @@ const App: React.FC = () => {
         const controller = new AbortController();
         const requestId = latestDeltaVisualizationRequestRef.current + 1;
         latestDeltaVisualizationRequestRef.current = requestId;
+        const isTextEdit = lastDeltaTextRef.current !== null && lastDeltaTextRef.current !== deferredContent;
+        const debounceMs = isTextEdit ? 750 : 200;
 
         const timeoutId = window.setTimeout(async () => {
             setIsLoadingDeltaVisualization(true);
@@ -846,10 +726,9 @@ const App: React.FC = () => {
                     'Delta visualization failed',
                 ));
                 if (latestDeltaVisualizationRequestRef.current === requestId) {
+                    lastDeltaTextRef.current = deferredContent;
                     startTransition(() => {
                         setDeltaVisualization(payload);
-                        setSelectedDeltaSentenceIndex(null);
-                        setSelectedDeltaEdgeId(null);
                         setDeltaVisualizationError(null);
                     });
                 }
@@ -871,7 +750,7 @@ const App: React.FC = () => {
                     setIsLoadingDeltaVisualization(false);
                 }
             }
-        }, 200);
+        }, debounceMs);
 
         return () => {
             controller.abort();
@@ -879,17 +758,9 @@ const App: React.FC = () => {
         };
     }, [activeTab, deferredContent, renderSurfaceMode]);
 
-    const stats = useMemo(() => {
-        const words = content.trim() ? content.trim().split(/\s+/).length : 0;
-
-        return { words };
-    }, [content]);
-
-    const isInputPending = content !== deferredContent;
     const previewActivity = previewActivityState(
         activeTab,
         renderSurfaceMode,
-        isInputPending,
         isAnalyzing,
         isLoadingDocumentAttention,
         isLoadingPairAttention,
@@ -904,22 +775,6 @@ const App: React.FC = () => {
             setActiveTab('token');
         });
     };
-
-    const currentPreviewPillLabel = previewPillLabel(
-        activeTab,
-        renderSurfaceMode,
-        renderArcMode,
-        semanticWeights,
-        documentAttention,
-        pairAttention,
-        deltaVisualization,
-        analysisError,
-        attentionError,
-        deltaVisualizationError,
-        isLoadingDocumentAttention,
-        isLoadingPairAttention,
-        isLoadingDeltaVisualization,
-    );
 
     const focusedLongDistanceOptions = useMemo<LongDistanceOptions>(() => ({
         enabled: focusedLongDistanceEnabled,
@@ -941,12 +796,12 @@ const App: React.FC = () => {
                 return [];
             }
 
-            const sourceIndex = Math.max(...manualArcSelection);
-            const targetIndex = Math.min(...manualArcSelection);
+            const sourceIndex = Math.min(...manualArcSelection);
+            const targetIndex = Math.max(...manualArcSelection);
             const connection = buildArcConnection(
                 sourceIndex,
                 targetIndex,
-                documentAttention.sentenceAttention[sourceIndex]?.[targetIndex],
+                documentAttention.sentenceAttention[targetIndex]?.[sourceIndex],
             );
 
             return connection ? [connection] : [];
@@ -1023,7 +878,7 @@ const App: React.FC = () => {
 
         if (renderArcMode === 'manual') {
             if (!manualArcSelection.length) {
-                return 'Click two different sentences. We will draw one later-to-earlier citation arc between them.';
+                return 'Click two different sentences. We will draw one earlier-to-later attention arc between them.';
             }
             if (manualArcSelection.length === 1) {
                 return `Sentence ${manualArcSelection[0]} selected. Choose one more sentence to complete the arc.`;
@@ -1033,32 +888,32 @@ const App: React.FC = () => {
 
         if (renderArcMode === 'focused') {
             if (focusedArcSentence == null) {
-                return 'Click a later sentence to reveal its strongest past citations.';
+                return 'Click a later sentence to reveal its strongest incoming sources.';
             }
             if (!renderArcConnections.length) {
                 if (focusedLongDistanceOptions.enabled) {
-                    return `Sentence ${focusedArcSentence} has no citations beyond a ${focusedLongDistanceOptions.minimumGap}-sentence gap.`;
+                    return `Sentence ${focusedArcSentence} has no incoming sources beyond a ${focusedLongDistanceOptions.minimumGap}-sentence gap.`;
                 }
-                return `Sentence ${focusedArcSentence} has no earlier citations to draw yet.`;
+                return `Sentence ${focusedArcSentence} has no earlier sources to draw yet.`;
             }
             if (focusedLongDistanceOptions.enabled) {
-                return `Showing the top ${renderArcConnections.length} long-distance citations for sentence ${focusedArcSentence}, excluding gaps of ${focusedLongDistanceOptions.minimumGap} sentences or less.`;
+                return `Showing the top ${renderArcConnections.length} long-distance sources flowing into sentence ${focusedArcSentence}, excluding gaps of ${focusedLongDistanceOptions.minimumGap} sentences or less.`;
             }
-            return `Showing the top ${renderArcConnections.length} past citations for sentence ${focusedArcSentence}.`;
+            return `Showing the top ${renderArcConnections.length} earlier sources flowing into sentence ${focusedArcSentence}.`;
         }
 
         if (!renderArcConnections.length) {
             if (globalLongDistanceOptions.enabled) {
-                return `No global citations remain beyond a ${globalLongDistanceOptions.minimumGap}-sentence gap.`;
+                return `No global arcs remain beyond a ${globalLongDistanceOptions.minimumGap}-sentence gap.`;
             }
-            return 'No global later-to-earlier citation arcs are available for this document yet.';
+            return 'No global earlier-to-later attention arcs are available for this document yet.';
         }
 
         if (globalLongDistanceOptions.enabled) {
-            return `Showing the strongest ${renderArcConnections.length} long-distance citation arcs, excluding gaps of ${globalLongDistanceOptions.minimumGap} sentences or less.`;
+            return `Showing the strongest ${renderArcConnections.length} long-distance attention arcs, excluding gaps of ${globalLongDistanceOptions.minimumGap} sentences or less.`;
         }
 
-        return `Showing the strongest ${renderArcConnections.length} later-to-earlier citation arcs in the document.`;
+        return `Showing the strongest ${renderArcConnections.length} earlier-to-later attention arcs in the document.`;
     }, [
         attentionError,
         documentAttention,
@@ -1184,10 +1039,6 @@ const App: React.FC = () => {
             return 'Open the delta surface to derive sentence flow, composition, drift, and context routing directly from the model writes.';
         }
 
-        if (deltaVisualizationMode === 'vector-flow') {
-            return `Each sentence is projected into 2D against a local unit-circle reference, then its attention delta is added and the composed update becomes the next anchor. Display angles are amplified ${deltaVisualization.vectorFlow.angleAmplification.toFixed(0)}x, while vector lengths are bounded from the sentence and delta magnitudes so the flow opens up without blowing out. Drag to pan and scroll to zoom.`;
-        }
-
         if (deltaVisualizationMode === 'local-global') {
             return 'Each visible sentence is filled by its local, medium-range, and long-range write mix. Click a sentence to inspect its strongest contributors.';
         }
@@ -1216,25 +1067,19 @@ const App: React.FC = () => {
 
     return (
         <div className="app-shell">
-            <div className="app-backdrop app-backdrop-primary" />
-            <div className="app-backdrop app-backdrop-secondary" />
-
             <main className="workspace">
                 <header className="hero">
-                    <div>
-                        <h1>Attention Markdown</h1>
+                    <div className="hero-brand">
+                        <h1>Attention-Locator</h1>
+                        <p className="hero-subtitle">Inspect how a causal language model routes sentence and token attention across text</p>
                     </div>
 
                     <div className="hero-aside">
                         <aside className="legend-showcase" aria-label="Attention color legend">
                             <div className="legend-showcase-header">
-                                <div>
-                                    <p className="panel-label">Attention spectrum</p>
-                                    <h2>Legend</h2>
-                                </div>
-                                <SwatchBook size={18} />
+                                <span className="panel-label">Attention spectrum</span>
+                                <div className="attention-legend-bar" />
                             </div>
-                            <div className="attention-legend-bar" />
                             <div className="legend-showcase-grid">
                                 {ATTENTION_LEGEND_ITEMS.map((item) => (
                                     <div key={item.label} className="legend-showcase-item">
@@ -1250,89 +1095,30 @@ const App: React.FC = () => {
                     </div>
                 </header>
 
-                <section className={`panel-grid ${isEditorCollapsed ? 'panel-grid-collapsed' : ''}`}>
-                    <section className={`editor-panel glass-panel ${isEditorCollapsed ? 'editor-panel-collapsed' : ''}`}>
-                        <button
-                            type="button"
-                            className="editor-collapse-toggle"
-                            onClick={() => setIsEditorCollapsed((value) => !value)}
-                            aria-label={isEditorCollapsed ? 'Expand editor panel' : 'Collapse editor panel'}
-                            title={isEditorCollapsed ? 'Expand editor panel' : 'Collapse editor panel'}
-                        >
-                            {isEditorCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-                        </button>
-
-                        {isEditorCollapsed ? (
-                            <div className="editor-collapsed-strip">
-                                <FileText size={18} />
-                                <span>Editor</span>
-                                <small>{stats.words} words</small>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="panel-header editor-panel-header">
-                                    <div>
-                                        <p className="panel-label">Markdown input</p>
-                                        <h2>Compose or paste a document</h2>
-                                    </div>
-                                    <span className="panel-pill panel-pill-quiet">
-                                        {isInputPending || isAnalyzing ? 'Live analysis syncing' : 'Preview-first editing'}
-                                    </span>
-                                </div>
-
-                                <textarea
-                                    className="editor-textarea"
-                                    value={content}
-                                    onChange={(event) => setContent(event.target.value)}
-                                    spellCheck={false}
-                                    placeholder="Paste markdown here..."
-                                />
-                            </>
-                        )}
-                    </section>
-
-                    <section className="preview-panel glass-panel">
-                        <div className="panel-header">
-                            <div>
-                                <p className="panel-label">Semantic preview</p>
-                                <h2>Rendered text, sentence map, and token explorer</h2>
-                            </div>
-                            <span className={`panel-pill ${(analysisError || attentionError) ? 'panel-pill-warning' : ''}`}>
-                                {currentPreviewPillLabel}
-                            </span>
+                <section className="preview-panel glass-panel">
+                    <div className="preview-tab-bar" role="tablist" aria-label="Attention explorer views">
+                        <div className="preview-tab-group preview-tab-group-pinned" role="group" aria-label="Rendered surface mode options">
+                            {RENDER_SURFACE_MODES.map((mode) => (
+                                <button
+                                    key={mode.id}
+                                    type="button"
+                                    aria-pressed={renderSurfaceMode === mode.id}
+                                    className={`preview-tab preview-tab-pinned ${renderSurfaceMode === mode.id ? 'preview-tab-pinned-active' : ''}`}
+                                    onClick={() => {
+                                        setRenderSurfaceMode(mode.id);
+                                        if (activeTab !== 'rendered') {
+                                            setActiveTab('rendered');
+                                        }
+                                    }}
+                                >
+                                    {mode.label}
+                                </button>
+                            ))}
                         </div>
 
-                        {analysisError ? (
-                            <div className="status-banner">
-                                <strong>Semantic analysis is unavailable.</strong>
-                                <span>{analysisError}</span>
-                            </div>
-                        ) : null}
+                        <span className="preview-tab-divider" aria-hidden="true" />
 
-                        {health?.error && !health.ready ? (
-                            <div className="status-banner">
-                                <strong>Backend health warning.</strong>
-                                <span>{health.error}</span>
-                            </div>
-                        ) : null}
-
-                        {previewActivity ? (
-                            <div className="preview-activity-card" aria-live="polite">
-                                <div className="preview-activity-header">
-                                    <div className="preview-activity-copy">
-                                        <span className="preview-activity-kicker">{previewActivity.kicker}</span>
-                                        <strong>{previewActivity.title}</strong>
-                                        <span>{previewActivity.description}</span>
-                                    </div>
-                                    <LoaderCircle size={18} className="spin-icon" />
-                                </div>
-                                <div className="preview-activity-track">
-                                    <span className="preview-activity-bar" />
-                                </div>
-                            </div>
-                        ) : null}
-
-                        <div className="preview-tab-bar" role="tablist" aria-label="Attention explorer views">
+                        <div className="preview-tab-group">
                             {VIEW_TABS.map((tab) => (
                                 <button
                                     key={tab.id}
@@ -1347,47 +1133,41 @@ const App: React.FC = () => {
                             ))}
                         </div>
 
-                        <div className="preview-surface">
+                        {previewActivity ? (
+                            <div className="preview-tab-status" aria-live="polite">
+                                <LoaderCircle size={14} strokeWidth={1.75} className="spin-icon" />
+                                <span>{previewActivity.title}</span>
+                            </div>
+                        ) : null}
+                    </div>
+
+                    {analysisError ? (
+                        <div className="status-banner">
+                            <strong>Semantic analysis is unavailable</strong>
+                            <span>{analysisError}</span>
+                        </div>
+                    ) : null}
+
+                    {health?.error && !health.ready ? (
+                        <div className="status-banner">
+                            <strong>Backend health warning</strong>
+                            <span>{health.error}</span>
+                        </div>
+                    ) : null}
+
+                    <div className="preview-surface">
                             {activeTab === 'rendered' ? (
                                 <div className="rendered-preview-stack">
-                                    <section className="surface-mode-toolbar" aria-label="Rendered surface mode">
-                                        <div className="surface-mode-group" role="group" aria-label="Rendered surface mode options">
-                                            {RENDER_SURFACE_MODES.map((mode) => (
-                                                <button
-                                                    key={mode.id}
-                                                    type="button"
-                                                    className={`surface-mode-button ${renderSurfaceMode === mode.id ? 'surface-mode-button-active' : ''}`}
-                                                    onClick={() => setRenderSurfaceMode(mode.id)}
-                                                >
-                                                    {mode.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                        <span className="surface-mode-caption">
-                                            {renderSurfaceMode === 'semantic'
-                                                ? 'Sentence-level surface styling from SAVIS attention.'
-                                                : 'Sentence-level surface styling from cached delta writes.'}
-                                        </span>
-                                    </section>
-
                                     {renderSurfaceMode === 'semantic' ? (
                                         <>
                                             <section className="arc-toolbar" aria-label="Sentence arc controls">
-                                                <div className="arc-toolbar-header">
-                                                    <div>
-                                                        <p className="panel-label">Arc overlay</p>
-                                                        <h3>Later-to-earlier sentence citations</h3>
-                                                    </div>
-                                                    <GitBranch size={18} />
-                                                </div>
-
                                                 <div className="arc-mode-group" role="group" aria-label="Arc overlay modes">
                                                     <button
                                                         type="button"
                                                         className={`arc-mode-button ${renderArcMode === 'manual' ? 'arc-mode-button-active' : ''}`}
                                                         onClick={() => setRenderArcMode('manual')}
                                                     >
-                                                        <GitBranch size={16} />
+                                                        <GitBranch size={16} strokeWidth={1.5} />
                                                         <span className="arc-mode-button-label">Pair select</span>
                                                     </button>
                                                     <button
@@ -1395,7 +1175,7 @@ const App: React.FC = () => {
                                                         className={`arc-mode-button ${renderArcMode === 'focused' ? 'arc-mode-button-active' : ''}`}
                                                         onClick={() => setRenderArcMode('focused')}
                                                     >
-                                                        <Target size={16} />
+                                                        <Target size={16} strokeWidth={1.5} />
                                                         <span className="arc-mode-button-label">Top-k from sentence</span>
                                                     </button>
                                                     <button
@@ -1403,7 +1183,7 @@ const App: React.FC = () => {
                                                         className={`arc-mode-button ${renderArcMode === 'global' ? 'arc-mode-button-active' : ''}`}
                                                         onClick={() => setRenderArcMode('global')}
                                                     >
-                                                        <Globe size={16} />
+                                                        <Globe size={16} strokeWidth={1.5} />
                                                         <span className="arc-mode-button-label">Global top-k</span>
                                                     </button>
                                                     <button
@@ -1416,11 +1196,11 @@ const App: React.FC = () => {
                                                 </div>
 
                                                 {renderArcMode === 'focused' || renderArcMode === 'global' ? (
-                                                    <>
+                                                    <div className="arc-controls-row">
                                                         <label className="arc-slider-card">
                                                             <div className="arc-slider-heading">
                                                                 <span>
-                                                                    <SlidersHorizontal size={15} />
+                                                                    <SlidersHorizontal size={16} strokeWidth={1.5} />
                                                                     {renderArcMode === 'focused' ? 'Top-k past citations' : 'Top-k global arcs'}
                                                                 </span>
                                                                 <strong>{currentArcTopK}</strong>
@@ -1452,27 +1232,27 @@ const App: React.FC = () => {
                                                                 <div className="arc-filter-copy">
                                                                     <strong>Long distance relationship factor</strong>
                                                                 </div>
-                                                                <button
-                                                                    type="button"
-                                                                    role="switch"
-                                                                    aria-checked={isCurrentLongDistanceEnabled}
-                                                                    className={`arc-filter-switch ${isCurrentLongDistanceEnabled ? 'arc-filter-switch-active' : ''}`}
-                                                                    onClick={() => {
-                                                                        if (renderArcMode === 'focused') {
-                                                                            setFocusedLongDistanceEnabled((currentValue) => !currentValue);
-                                                                            return;
-                                                                        }
-                                                                        setGlobalLongDistanceEnabled((currentValue) => !currentValue);
-                                                                    }}
-                                                                >
-                                                                    <span className="arc-filter-switch-thumb" />
-                                                                </button>
+                                                                <div className="arc-filter-actions">
+                                                                    <strong className="arc-filter-value">{currentLongDistanceFactor}</strong>
+                                                                    <button
+                                                                        type="button"
+                                                                        role="switch"
+                                                                        aria-checked={isCurrentLongDistanceEnabled}
+                                                                        className={`arc-filter-switch ${isCurrentLongDistanceEnabled ? 'arc-filter-switch-active' : ''}`}
+                                                                        onClick={() => {
+                                                                            if (renderArcMode === 'focused') {
+                                                                                setFocusedLongDistanceEnabled((currentValue) => !currentValue);
+                                                                                return;
+                                                                            }
+                                                                            setGlobalLongDistanceEnabled((currentValue) => !currentValue);
+                                                                        }}
+                                                                    >
+                                                                        <span className="arc-filter-switch-thumb" />
+                                                                    </button>
+                                                                </div>
                                                             </div>
 
                                                             <label className={`arc-filter-slider-wrap ${isCurrentLongDistanceEnabled ? '' : 'arc-filter-slider-wrap-disabled'}`}>
-                                                                <div className="arc-slider-heading">
-                                                                    <strong>{currentLongDistanceFactor}</strong>
-                                                                </div>
                                                                 <input
                                                                     className="arc-slider"
                                                                     type="range"
@@ -1496,7 +1276,7 @@ const App: React.FC = () => {
                                                                 </div>
                                                             </label>
                                                         </section>
-                                                    </>
+                                                    </div>
                                                 ) : null}
 
                                                 <div className="arc-toolbar-footer">
@@ -1526,8 +1306,10 @@ const App: React.FC = () => {
                                                 </div>
                                             </section>
 
-                                            <RenderMathMarkdown
+                                            <Render
                                                 content={content}
+                                                onChange={setContent}
+                                                placeholder="Paste markdown here..."
                                                 semanticWeights={semanticWeights}
                                                 sentenceArcConnections={renderArcConnections}
                                                 selectedSentenceIndices={renderArcSelectedSentences}
@@ -1545,7 +1327,6 @@ const App: React.FC = () => {
                                                         <p className="panel-label">Delta visualization</p>
                                                         <h3>Sentence flow through residual writes</h3>
                                                     </div>
-                                                    <SwatchBook size={18} />
                                                 </div>
 
                                                 <div className="delta-mode-grid" role="group" aria-label="Delta visualization modes">
@@ -1603,16 +1384,6 @@ const App: React.FC = () => {
                                                                     <span>Flow {selectedDeltaSentence.incomingFlowNorm.toFixed(3)}</span>
                                                                     <span>Drift {selectedDeltaSentence.driftNorm.toFixed(3)}</span>
                                                                     <span>Peak layer {selectedDeltaSentence.peakLayer + 1}</span>
-                                                                    {deltaVisualizationMode === 'vector-flow' && selectedDeltaSentence.vectorFlow ? (
-                                                                        <>
-                                                                            <span>Sentence {selectedDeltaSentence.vectorFlow.sentenceAngle.toFixed(1)}°</span>
-                                                                            <span>Delta {selectedDeltaSentence.vectorFlow.deltaRelativeAngle.toFixed(1)}°</span>
-                                                                            <span>Composed {selectedDeltaSentence.vectorFlow.composedMagnitude.toFixed(2)}</span>
-                                                                            {deltaVisualization ? (
-                                                                                <span>Visual {deltaVisualization.vectorFlow.angleAmplification.toFixed(0)}x</span>
-                                                                            ) : null}
-                                                                        </>
-                                                                    ) : null}
                                                                 </div>
                                                                 {deltaInspectorSources.length ? (
                                                                     <div className="delta-source-badges">
@@ -1652,24 +1423,18 @@ const App: React.FC = () => {
                                                 </div>
                                             ) : null}
 
-                                            {deltaVisualizationMode === 'vector-flow' ? (
-                                                <DeltaVectorFlowCanvas
-                                                    visualization={deltaVisualization}
-                                                    selectedSentenceIndex={selectedDeltaSentenceIndex}
-                                                    onSelectSentence={handleRenderedDeltaSentenceClick}
-                                                />
-                                            ) : (
-                                                <RenderMathMarkdown
-                                                    content={content}
-                                                    deltaVisualization={deltaVisualization ? { mode: deltaVisualizationMode, sentences: deltaVisualization.sentences } : null}
-                                                    sentenceArcConnections={deltaConnections}
-                                                    selectedSentenceIndices={selectedDeltaIndices}
-                                                    activeArcId={selectedDeltaEdgeId}
-                                                    isSentenceSelectionEnabled
-                                                    onDeltaSentenceClick={handleRenderedDeltaSentenceClick}
-                                                    onArcClick={(arcId) => setSelectedDeltaEdgeId((currentId) => currentId === arcId ? null : arcId)}
-                                                />
-                                            )}
+                                            <Render
+                                                content={content}
+                                                onChange={setContent}
+                                                placeholder="Paste markdown here..."
+                                                deltaVisualization={deltaVisualization ? { mode: deltaVisualizationMode, sentences: deltaVisualization.sentences } : null}
+                                                sentenceArcConnections={deltaConnections}
+                                                selectedSentenceIndices={selectedDeltaIndices}
+                                                activeArcId={selectedDeltaEdgeId}
+                                                isSentenceSelectionEnabled
+                                                onDeltaSentenceClick={handleRenderedDeltaSentenceClick}
+                                                onArcClick={(arcId) => setSelectedDeltaEdgeId((currentId) => currentId === arcId ? null : arcId)}
+                                            />
                                         </>
                                     )}
                                 </div>
@@ -1685,11 +1450,8 @@ const App: React.FC = () => {
                                 />
                             )}
                         </div>
-                    </section>
                 </section>
             </main>
-
-            <GlobalImagePreviewModal />
         </div>
     );
 };

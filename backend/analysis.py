@@ -53,7 +53,7 @@ DEFAULT_MODEL_NAME = discover_default_model_name()
 
 
 @dataclass
-class SAVISDocumentState:
+class AttentionDocumentState:
     cache_key: str
     analysis_text: str
     token_count: int
@@ -232,7 +232,7 @@ class BaseSemanticMarkdownAnalyzer:
     device = "cpu"
 
     def analyze_markdown(self, markdown_text: str) -> list[dict[str, Any]]:
-        from backend.savis.attention import sentence_tokenize_text
+        from backend.attention import sentence_tokenize_text
 
         sentences = sentence_tokenize_text(markdown_text)
 
@@ -299,21 +299,21 @@ class BaseSemanticMarkdownAnalyzer:
         raise NotImplementedError
 
 
-class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
+class FullContextAttentionAnalyzer(BaseSemanticMarkdownAnalyzer):
     def __init__(
         self,
         model_name: str = DEFAULT_MODEL_NAME,
         max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS,
         max_delta_visualization_tokens: int = DEFAULT_MAX_DELTA_VISUALIZATION_TOKENS,
     ) -> None:
-        from backend.savis import Attention
+        from backend.attention import Attention
 
         self.model_name = model_name
         self.max_input_tokens = max_input_tokens
         self.max_delta_visualization_tokens = max_delta_visualization_tokens
         self.attention_backend = Attention(model_name, attn_implementation="eager")
         self.device = self.attention_backend.device
-        self._cached_state: SAVISDocumentState | None = None
+        self._cached_state: AttentionDocumentState | None = None
         self._cached_delta_capture: DeltaCaptureMetadata | None = None
 
     def _release_inference_memory(self) -> None:
@@ -408,7 +408,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         }
 
     def capture_delta_document(self, markdown_text: str) -> dict[str, Any]:
-        from backend.savis.attention import _model_input_device
+        from backend.attention import _model_input_device
 
         prepared_text = markdown_text.replace("\r\n", "\n").replace("\r", "\n")
         if not prepared_text.strip():
@@ -679,9 +679,8 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
     def _compute_state(
         self,
         markdown_text: str,
-    ) -> SAVISDocumentState:
-        from backend.savis import ISA
-        from backend.savis.attention import map_sentences_to_source_offsets, sentence_tokenize_text
+    ) -> AttentionDocumentState:
+        from backend.attention import ISA, map_sentences_to_source_offsets, sentence_tokenize_text
 
         prepared_text = markdown_text.replace("\r\n", "\n").replace("\r", "\n")
         if not prepared_text.strip():
@@ -762,7 +761,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
 
         if usable_count < len(isa.sentences):
             warnings.append(
-                "Sentence alignment from the SAVIS tokenizer pass was truncated."
+                "Sentence alignment from the tokenizer pass was truncated."
             )
         if any(source_start is None or source_end is None for source_start, source_end in sentence_source_offsets):
             warnings.append(
@@ -800,7 +799,7 @@ class FullContextSAVISAnalyzer(BaseSemanticMarkdownAnalyzer):
         del sequences
         self._release_inference_memory()
 
-        state = SAVISDocumentState(
+        state = AttentionDocumentState(
             cache_key=prepared_text,
             analysis_text=prepared_text,
             token_count=token_count,

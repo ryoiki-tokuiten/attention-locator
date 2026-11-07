@@ -1,14 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../Shiki', () => ({
-    highlightCodeSync: (code: string) => code,
-    isLanguageSupported: () => true,
-    resolveLanguage: (language: string) => language || 'plaintext',
-    isHighlighterReady: () => true,
-    onHighlighterReady: () => () => undefined,
-}));
-
 import App from '../App';
 
 function deferredResponse<T>() {
@@ -76,15 +68,17 @@ describe('App', () => {
 
         render(<App />);
 
-        const textarea = screen.getByPlaceholderText(/Paste markdown here/i);
+        const editor = screen.getByRole('textbox', { name: /Editable document text/i });
 
         await act(async () => {
-            fireEvent.change(textarea, { target: { value: '# First revision\n\nOne sentence.' } });
+            editor.textContent = 'First revision. One sentence.';
+            fireEvent.input(editor);
             await new Promise((resolve) => setTimeout(resolve, 900));
         });
 
         await act(async () => {
-            fireEvent.change(textarea, { target: { value: '# Second revision\n\nNew value.' } });
+            editor.textContent = 'Second revision. New value.';
+            fireEvent.input(editor);
             await new Promise((resolve) => setTimeout(resolve, 900));
         });
 
@@ -111,7 +105,7 @@ describe('App', () => {
         });
 
         await waitFor(() => {
-            expect(screen.getByRole('heading', { level: 1, name: /Attention Markdown/i })).toBeInTheDocument();
+            expect(screen.getByRole('heading', { level: 1, name: /Attention-Locator/i })).toBeInTheDocument();
         }, { timeout: 4000 });
 
         expect(screen.queryByText(/Semantic analysis is unavailable/i)).not.toBeInTheDocument();
@@ -166,8 +160,9 @@ describe('App', () => {
 
         render(<App />);
 
-        const textarea = screen.getByPlaceholderText(/Paste markdown here/i);
-        fireEvent.change(textarea, { target: { value: 'Problem sentence. Second sentence.' } });
+        const editor = screen.getByRole('textbox', { name: /Editable document text/i });
+        editor.textContent = 'Problem sentence. Second sentence.';
+        fireEvent.input(editor);
 
         await act(async () => {
             await new Promise((resolve) => setTimeout(resolve, 900));

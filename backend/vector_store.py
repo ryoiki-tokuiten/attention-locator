@@ -92,7 +92,7 @@ async def ingest_document(
     model_name:
         String identifier of the model (e.g. 'gemma-3-270m-it-Q8_0.gguf').
     sentences:
-        List of sentence payload dicts from the SAVIS pipeline. Each must have
+        List of sentence payload dicts from the attention pipeline. Each must have
         keys: index, sentence, weight (optional), band (optional).
     sentence_boundaries:
         Token boundary indices from ISA. sentence_boundaries[i] is the start

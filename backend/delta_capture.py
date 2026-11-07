@@ -12,7 +12,7 @@ import numpy as np
 import torch
 
 
-DELTA_CACHE_ROOT = Path(tempfile.gettempdir()) / "attention-markdown-delta-cache"
+DELTA_CACHE_ROOT = Path(tempfile.gettempdir()) / "attention-locator-delta-cache"
 
 
 def build_delta_storage_key(model_name: str, text: str) -> str:

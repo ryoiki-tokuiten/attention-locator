@@ -1,19 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-vi.mock('../Shiki', () => ({
-    highlightCodeSync: (code: string) => code,
-    isLanguageSupported: () => true,
-    resolveLanguage: (language: string) => language || 'plaintext',
-    isHighlighterReady: () => true,
-    onHighlighterReady: () => () => undefined,
-}));
-
-import { renderMathContent } from '../../RenderMathMarkdownLogic';
+import { renderPlainContent } from '../../render';
 import type { DeltaVisualizationPayload, SemanticWeight } from '../types/semantic';
 
-describe('renderMathContent', () => {
-    it('renders markdown without semantic attributes when no weights are present', () => {
-        const html = renderMathContent('Plain sentence. Another sentence.');
+describe('renderPlainContent', () => {
+    it('renders plain text without semantic attributes when no weights are present', () => {
+        const html = renderPlainContent('Plain sentence. Another sentence.');
 
         expect(html).not.toContain('data-semantic-band');
         expect(html).toContain('Plain sentence.');
@@ -32,32 +24,44 @@ describe('renderMathContent', () => {
             },
         ];
 
-        const html = renderMathContent('Semantic focus belongs here.', weights);
+        const html = renderPlainContent('Semantic focus belongs here.', weights);
 
         expect(html).toContain('data-semantic-band="high"');
         expect(html).toContain('data-semantic-index="0"');
     });
 
-    it('keeps code fences renderable when semantic weights are present', () => {
+    it('keeps raw text intact when semantic weights are present', () => {
+        const raw = 'First sentence.\nSecond sentence.';
         const weights: SemanticWeight[] = [
             {
                 index: 0,
-                sentence: 'const a = 1;',
-                normalizedSentence: 'const a = 1;',
+                sentence: 'First sentence.',
+                normalizedSentence: 'first sentence.',
                 weight: 0.88,
                 band: 'high',
                 sourceStart: 0,
-                sourceEnd: '```ts\nconst a = 1;\n```'.length,
+                sourceEnd: 'First sentence.'.length,
+            },
+            {
+                index: 1,
+                sentence: 'Second sentence.',
+                normalizedSentence: 'second sentence.',
+                weight: 0.42,
+                band: 'medium',
+                sourceStart: 'First sentence.\n'.length,
+                sourceEnd: raw.length,
             },
         ];
 
-        const html = renderMathContent('```ts\nconst a = 1;\n```', weights);
+        const html = renderPlainContent(raw, weights);
 
-        expect(html).toContain('code-block-container');
+        expect(html).toContain('data-semantic-index="0"');
+        expect(html).toContain('data-semantic-index="1"');
+        expect(html).toContain('>Second sentence.</span>');
     });
 
     it('ignores invalid semantic weights instead of crashing', () => {
-        const html = renderMathContent('Semantic focus belongs here.', [{
+        const html = renderPlainContent('Semantic focus belongs here.', [{
             index: 0,
             sentence: 'Semantic focus belongs here.',
             normalizedSentence: 'semantic focus belongs here.',
@@ -96,38 +100,15 @@ describe('renderMathContent', () => {
                     driftNorm: 0.4,
                     peakLayer: 1,
                     peakLayerRatio: 1,
-                    vectorFlow: {
-                        anchorX: 0,
-                        anchorY: 0,
-                        sentenceEndX: 1.8,
-                        sentenceEndY: 0,
-                        updatedEndX: 2.6,
-                        updatedEndY: 0.45,
-                        sentenceAngle: 0,
-                        deltaAngle: 36,
-                        deltaRelativeAngle: 36,
-                        composedAngle: 10,
-                        sentenceMagnitude: 1.8,
-                        deltaMagnitude: 0.92,
-                        composedMagnitude: 2.638181,
-                    },
                     topSources: [],
                 },
             ],
             driftByLayer: [[0.1, 0.2]],
             globalTopEdges: [],
-            vectorFlow: {
-                projection: 'pca',
-                angleAmplification: 36,
-                baseWeight: 1.2,
-                deltaWeight: 0.55,
-                unitCircleRadius: 1,
-                bounds: { minX: -1.5, maxX: 1.5, minY: -1.5, maxY: 1.5 },
-            },
             warnings: [],
         };
 
-        const html = renderMathContent(
+        const html = renderPlainContent(
             'Delta surface sentence.',
             [],
             { mode: 'local-global', sentences: deltaVisualization.sentences },

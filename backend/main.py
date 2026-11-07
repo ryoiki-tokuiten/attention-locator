@@ -8,7 +8,7 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.analysis import DEFAULT_MAX_INPUT_TOKENS, DEFAULT_MODEL_NAME, BaseSemanticMarkdownAnalyzer, FullContextSAVISAnalyzer
+from backend.analysis import DEFAULT_MAX_INPUT_TOKENS, DEFAULT_MODEL_NAME, BaseSemanticMarkdownAnalyzer, FullContextAttentionAnalyzer
 from backend.db import create_pool
 from backend.schemas import (
     AnalyzeRequest,
@@ -49,7 +49,7 @@ def create_app(
         # Initialise model
         if app.state.analyzer is None and eager_load_default:
             try:
-                app.state.analyzer = FullContextSAVISAnalyzer()
+                app.state.analyzer = FullContextAttentionAnalyzer()
                 app.state.ready = True
             except Exception as exc:  # pragma: no cover
                 app.state.startup_error = str(exc)
@@ -71,7 +71,7 @@ def create_app(
             await app.state.db_pool.close()
 
     app = FastAPI(
-        title="Semantic Attention Markdown Backend",
+        title="Attention-Locator Backend",
         version="0.3.0",
         lifespan=lifespan,
     )
@@ -102,7 +102,7 @@ def create_app(
             return None
 
         try:
-            runtime_analyzer = FullContextSAVISAnalyzer()
+            runtime_analyzer = FullContextAttentionAnalyzer()
             app.state.analyzer = runtime_analyzer
             app.state.ready = True
         except Exception as exc:  # pragma: no cover - exercised by runtime only

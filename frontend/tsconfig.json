@@ -17,6 +17,6 @@
     "jsx": "react-jsx",
     "types": ["vite/client", "vitest/globals", "node"]
   },
-  "include": ["src", "RenderMathMarkdown.tsx", "RenderMathMarkdownLogic.ts"],
+  "include": ["src", "render.tsx"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

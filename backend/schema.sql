@@ -1,4 +1,4 @@
--- Attention Markdown — Neural Residual Vector Store
+-- Attention-Locator — Neural Residual Vector Store
 
 CREATE EXTENSION IF NOT EXISTS vector;
 

@@ -246,11 +246,8 @@ class ISA:
     def __init__(self, generated_sequences, attentions, tokenizer, source_text: str | None = None):
         self.tokenizer = tokenizer
 
-        # 문장별로 분리
-        # sentences = [sentence.strip() for sentence in generated_text.split('\n') if sentence.strip()]
         sentence_boundaries_ids, sentences = self._find_sentence_boundaries(generated_sequences)
 
-        # 문장 간 attention 계산
         head_attentions = self._integrate_layers(attentions)
         sentence_attention_heads = self._calculate_sentence_attention(head_attentions, sentence_boundaries_ids)
         sentence_attention = self._aggregate_attention(sentence_attention_heads)
@@ -268,12 +265,10 @@ class ISA:
     def _integrate_layers(self, attentions):
         stacked_attentions = torch.stack(attentions, dim=0)
         return torch.max(stacked_attentions, dim=0).values
-    
-    def _aggregate_attention(self, sentence_attentions):
-        # input shape: (1, num_heads, num_sentences, num_sentences)
-        max_attention_heads, _ = torch.max(sentence_attentions, dim=1)
 
-        return max_attention_heads.squeeze(0) # shape: (num_sentences, num_sentences)
+    def _aggregate_attention(self, sentence_attentions):
+        max_attention_heads, _ = torch.max(sentence_attentions, dim=1)
+        return max_attention_heads.squeeze(0)
 
     def _find_sentence_boundaries(self, sequences):
         sentences = []
@@ -282,41 +277,37 @@ class ISA:
         tokens = self.tokenizer.convert_ids_to_tokens(sequences)
 
         for idx_i, token_i in enumerate(tokens):
-            if token_i == '\n' or '\n' in token_i or idx_i == len(tokens)-1:
-                text = self.tokenizer.decode(sequences[:idx_i+1])
+            if token_i == '\n' or '\n' in token_i or idx_i == len(tokens) - 1:
+                text = self.tokenizer.decode(sequences[:idx_i + 1])
 
                 text_chunk = text[sentence_boundaries_text[-1]:]
                 nltk_sentences = _safe_sent_tokenize(text_chunk)
 
                 idx_nltk = 0
                 idx_j = sentence_boundaries_ids[-1]
-                while idx_j < idx_i+1:
+                while idx_j < idx_i + 1:
                     if idx_nltk >= len(nltk_sentences):
                         break
                     nltk_sentence = nltk_sentences[idx_nltk]
                     slice_start = sentence_boundaries_ids[-1]
                     idx_j += 1
 
-                    text_slice = self.tokenizer.decode(sequences[slice_start:idx_j+1])
+                    text_slice = self.tokenizer.decode(sequences[slice_start:idx_j + 1])
                     if nltk_sentence in text_slice:
                         sentences.append(text_slice)
-                        sentence_boundaries_text.append(len(self.tokenizer.decode(sequences[:idx_j+1])))
-                        sentence_boundaries_ids.append(idx_j+1)
+                        sentence_boundaries_text.append(len(self.tokenizer.decode(sequences[:idx_j + 1])))
+                        sentence_boundaries_ids.append(idx_j + 1)
                         idx_nltk += 1
                         continue
-        
+
         return sentence_boundaries_ids, sentences
 
     def _calculate_sentence_attention(self, attentions, sentence_boundaries_ids):
-        # 문장 간 attention 계산
-        _, num_heads, _, _ = attentions.shape # shape: (1, num_heads, seq_length, seq_length)
-        num_sentences = len(sentence_boundaries_ids) - 1 # 시작점과 끝점을 포함하므로 1 뺌
+        _, num_heads, _, _ = attentions.shape
+        num_sentences = len(sentence_boundaries_ids) - 1
 
-        # 0으로 초기화
         sentence_attentions = torch.zeros((1, num_heads, num_sentences, num_sentences))
 
-        # for layer in range(num_layers):
-        # layer = 0
         for head in range(num_heads):
             for i in range(num_sentences):
                 start_i = sentence_boundaries_ids[i]
@@ -324,14 +315,13 @@ class ISA:
                 for j in range(num_sentences):
                     start_j = sentence_boundaries_ids[j]
                     end_j = sentence_boundaries_ids[j + 1]
-                    # 문장 범위 내 텐서 추출
                     attention_slice = attentions[0, head, start_i:end_i, start_j:end_j]
-                    
-                    if attention_slice.numel() == 0: # 빈 텐서 검사
+
+                    if attention_slice.numel() == 0:
                         max_attention = 0
                     else:
-                        max_attention = torch.max(attention_slice).item() # 문장 내 토큰들의 attention의 최대값
-                    
-                    sentence_attentions[0, head, i, j] = max_attention # 각 헤드 내에서 i번째 문장관 j번째 문장의 attention
+                        max_attention = torch.max(attention_slice).item()
 
-        return sentence_attentions # shape: (1, num_heads, num_sentences, num_sentences)
+                    sentence_attentions[0, head, i, j] = max_attention
+
+        return sentence_attentions

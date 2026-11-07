@@ -45,7 +45,7 @@ const SentenceAttentionView: React.FC<{
     }
 
     if (isLoading && !documentAttention) {
-        return <EmptyState message="Computing full-document attention with the SAVIS pipeline..." />;
+        return <EmptyState message="Computing full-document attention..." />;
     }
 
     if (!documentAttention || !documentAttention.sentenceCount) {
